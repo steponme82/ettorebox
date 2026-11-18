@@ -5,7 +5,7 @@
 // pedal. Another scene's blocks are set here directly. SAVE keeps them with the sound; recalling one is no change. Since test
 // build 50 a scene has a name of up to 3 characters, typed here only: the pedal shows it in place of SCENE n.
 
-import { app, $, h, on, blk, say } from "./edcore.js";
+import { app, $, h, fill, on, blk, say } from "./edcore.js";
 import { setOn } from "./edsound.js";
 import { refreshState } from "./edpresets.js";
 import { cleanSceneName } from "./pxedit.js";
@@ -59,7 +59,7 @@ function render() {
       h("span", { class: "sc-n", text: title(n) }),
       h("span", { class: "sc-dots", "aria-hidden": "true" }, order.map((b) => h("i", { class: (m >> b) & 1 && known ? "on" : "", style: `--c:${blk(b).color}` }))));
   };
-  el.append(
+  fill(el,                                         // (fill leaves out a closed grid's false, as h() does)
     h("div", { class: "sc-bar" },
       h("span", { class: "sc-l", text: "Scenes" }),
       Array.from({ length: N }, (_, n) => btn(n)),
