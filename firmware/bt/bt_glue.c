@@ -47,7 +47,7 @@ void bredr_esco_standard_tws_link_close(void *a) { (void)a; }
 void __BT_UPDATA_JUMP(void) { }
 void spi_cache_way_switch(uint8_t on) { (void)on; }            /* (the Bluetooth update's path: not taken) */
 int sdfile_get_disk_capacity(void) { return 0; }
-const char *sdk_version_info_get(void) { BT_CRUMB("sdk_version_info_get"); return "OPENPOCKET BT AUDIO"; }
+const char *sdk_version_info_get(void) { BT_CRUMB("sdk_version_info_get"); return "ETTOREBOX"; }
 void usr_timer_del(uint16_t id) { sys_timer_del(id); }
 
 /* ---- the flash's factory unique ID (fm1_flash.h fl_uid_ram, built with FL_UID): the source of this pedal's own address */
@@ -87,7 +87,7 @@ static void bt_mac_make(void)
     bt_mac[4] = 0x4F; bt_mac[5] = 0x02;                          /* (the library keeps addresses least significant byte first) */
 }
 uint8_t *bt_get_mac_addr(void) { BT_CRUMB("bt_get_mac_addr"); return bt_mac; }               /* the library's is weak (hci_vendor.c) */
-const char *bt_get_local_name(void) { BT_CRUMB("bt_get_local_name"); return "OpenPocket"; }   /* the library's is weak: the name a phone lists */
+const char *bt_get_local_name(void) { BT_CRUMB("bt_get_local_name"); return "ettorebox"; }   /* the library's is weak: the name a phone lists (ettorebox since beta 52) */
 
 /* the host's task calls the hook ble_profile_loop on each pass (a weak reference: left undefined it would be a call to address 0,
  * out of the call range, which the linker refuses). Test build 27: bt_le_midi.c's sends the web editor's replies there (up to

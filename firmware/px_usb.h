@@ -48,8 +48,13 @@ static uint32_t uad_lo = 52u, uad_hi = 108u, uad_prime = 80u, uad_tgt = 208u;
 #define UO_TGT uad_tgt
 #endif
 #endif
+#if OP_BT_AUDIO   /* ettorebox: the MIDI port's name (docs/pxota.js PORT_RE knows it) */
+#define FELUCCA_USB_PRODUCT "ettorebox"
+#define FELUCCA_USB_MANUFACTURER "ettorebox"
+#else
 #define FELUCCA_USB_PRODUCT "OpenPocket"
 #define FELUCCA_USB_MANUFACTURER "OpenPocket"
+#endif
 #define RING_PUBLISH() __asm__ volatile("" ::: "memory")
 /* the app may only write the OTA staging area (its loader + update record), the preset store (px_store.h) and,
  * v37, the NAM user models (px_models.h) */

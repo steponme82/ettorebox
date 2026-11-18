@@ -6,6 +6,10 @@ export const $ = (id) => document.getElementById(id);
 export const pad2 = (n) => String(n).padStart(2, "0");
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export const slotName = (slot) => pad2(slot + 1);
+// the firmware from INFO's version: ettorebox reports its own effects after OpenPocket's version ("v42 FX7"). Short: the
+// header's pill, which has room for little
+export const fwLabel = (version, short = false) =>
+  / FX\d+$/.test(version) ? (short ? "ettorebox" : `ettorebox (OpenPocket ${version})`) : `OpenPocket ${version}`;
 
 // conn: idle | unsupported | denied | searching | notfound | loading | ready | lost
 export const app = {

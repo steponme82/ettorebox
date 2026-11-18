@@ -10,7 +10,8 @@
  *                  it is set to a fixed, non-zero, locally administered unicast address. Not an IEEE-assigned one: a test image.
  *   advertising data   flags (LE general discoverable, BR/EDR not supported) + complete list of 128-bit service UUIDs
  *                      (BLE-MIDI 03B80E5A-EDE8-4B33-A751-6CE34EC4C700, little endian): 21 of the 31 bytes
- *   scan response      complete local name "OpenPocket": 12 bytes
+ *   scan response      complete local name "OpenPocket": 12 bytes (the Bluetooth audio image, ettorebox since beta 52:
+ *                      "ettorebox", 11 bytes)
  * Transmit power is the library's own power table (no stored trims are read: docs/BLE-TEST.md). */
 #pragma once
 #include <stdint.h>
@@ -22,6 +23,10 @@ static uint8_t ble_adv_data[] = {
     17, 0x07,                                                   /* complete list of 128-bit service UUIDs, little endian */
     0x00, 0xC7, 0xC4, 0x4E, 0xE3, 0x6C, 0x51, 0xA7, 0x33, 0x4B, 0xE8, 0xED, 0x5A, 0x0E, 0xB8, 0x03,
 };
+#if OP_BT_AUDIO
+static uint8_t ble_scan_rsp[] = { 10, 0x09, 'e','t','t','o','r','e','b','o','x' };
+#else
 static uint8_t ble_scan_rsp[] = { 11, 0x09, 'O','p','e','n','P','o','c','k','e','t' };
+#endif
 enum { BLE_NAME_LEN = sizeof ble_scan_rsp - 2 };
 static uint8_t ble_adv_mac[6] = { 0x54, 0x4C, 0x42, 0x50, 0x4F, 0x02 };   /* 02:4F:50:42:4C:54, little endian: bit 1 of the first octet = locally administered, bit 0 = unicast */

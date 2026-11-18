@@ -21,7 +21,8 @@ Not affiliated with M-VAVE, Donner or the OpenPocket maintainers. Install at you
 
 ## Status
 
-Beta. The latest is beta 51, test build 51 (see Releases). Build 50 runs on its author's BlackBox, and build 38 is the one played
+Beta. The latest is beta 52, test build 52 (see Releases): at start-up the pedal reads `ETTOREBOX`, a phone and the
+computer list it as `ettorebox`. Build 50 runs on its author's BlackBox, and build 38 is the one played
 longest, about two hours of music on stage. [docs/BT-AUDIO-TEST.md](docs/BT-AUDIO-TEST.md) has every test build's notes
 and what to check on each.
 
@@ -83,7 +84,7 @@ over USB with a data cable, press **Connect**, then **Install**. The web editor 
 From the command line instead, with this repository cloned:
 
 ```
-gh release download beta-51 -R steponme82/ettorebox -D build/bt --clobber
+gh release download beta-52 -R steponme82/ettorebox -D build/bt --clobber
 make serve-bt
 ```
 

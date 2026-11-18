@@ -24,7 +24,8 @@ export const IS_OFFICIAL = (id) => MODELS.includes(id.model) && id.version < 900
 export const NEW_LAYOUT = (id) => id.model === "BlackBox" && IS_OFFICIAL(id) && id.version >= 22;
 // the MIDI ports the page may probe: OpenPocket and its loader, and the names the official firmware's USB device gets
 // (its descriptors say "USB Composite Device" / "USB-Midi" / "Jieli Technology"; the system may add its own words)
-export const PORT_RE = /openpocket|pocket|blackbox|black.?box|ota|usb.?midi|composite|jieli|sinco|m-?vave|donner/i;
+export const PORT_RE = /openpocket|ettorebox|pocket|blackbox|black.?box|ota|usb.?midi|composite|jieli|sinco|m-?vave|donner/i;   // (ettorebox: its USB
+// and Bluetooth name since beta 52)
 
 // errors carry a code the page translates: notfound, model, stopped, noloader, lost, noreturn, mismatch, badreq,
 // foreign (detail: the loader's identity), layout (the pedal's flash layout is M-VAVE V22's or later: nothing written;

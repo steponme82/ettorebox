@@ -2,7 +2,7 @@
 // OpenPocket web editor: the start. Finding the pedal and every way that can fail, the sections and the way between
 // them, the DSP load, the keyboard. The sections themselves: edsound.js, edpresets.js, edmodels.js, edmidi.js.
 
-import { app, $, h, icon, on, emit, say, busy } from "./edcore.js";
+import { app, $, h, icon, on, emit, say, busy, fwLabel } from "./edcore.js";
 import { Editor } from "./pxedit.js";
 import { initPresets, loadBank, refreshSlots, refreshBank, stepPreset, save, comparing, compareSlotChanged, compareBeforeUnload } from "./edpresets.js";
 import { initSound } from "./edsound.js";
@@ -48,7 +48,7 @@ async function connect() {
     await loadAssets();
     e.onState = onPush;
     await e.watch(true);
-    $("status").textContent = `${info.identity.replace(/_9?\d+$/, "")} · OpenPocket ${info.version}`;
+    $("status").textContent = `${info.identity.replace(/_9?\d+$/, "")} · ${fwLabel(info.version, true)}`;
     setConn("ready");
     emit("slots"); emit("state", {});
     clearInterval(pingTimer);
@@ -110,7 +110,7 @@ const GATE = {
       h("li", {}, h("b", { text: "Press Connect. " }), "The browser asks to use MIDI devices: allow it."),
       h("li", {}, h("b", { text: "Play. " }), "Every change here sounds at once, and what you change on the pedal shows here.")),
     connectBtn("Connect"),
-    h("p", { class: "dim" }, "The pedal needs OpenPocket v32 or newer. ", h("a", { href: "./", text: "Install or update it" }), " first if it runs something older."),
+    h("p", { class: "dim" }, "The pedal needs ettorebox, or OpenPocket v32 or newer. ", h("a", { href: "./", text: "Install or update it" }), " first if it runs something older."),
     h("ul", { class: "what" },
       h("li", {}, h("b", { text: "Presets" }), "Browse, rename, reorder, copy and back up the 52 presets."),
       h("li", {}, h("b", { text: "Sound" }), "The signal chain and every block's settings, live."),
@@ -140,7 +140,7 @@ const GATE = {
       h("ul", { class: "check" },
         h("li", { text: "Is the pedal switched on and past its start screen?" }),
         h("li", { text: "Does the cable carry data? Many USB-C cables only charge." }),
-        h("li", {}, "Does it run OpenPocket v32 or newer? ", h("a", { href: "./", text: "Install or update it" }), "."),
+        h("li", {}, "Does it run ettorebox, or OpenPocket v32 or newer? ", h("a", { href: "./", text: "Install or update it" }), "."),
         h("li", { text: "Is another tab or program using it (the installer, a DAW)? Close that first." })),
       connectBtn("Try again"),
       h("p", { class: "dim", text: "The editor also tries again by itself as soon as a device is plugged in." }),
@@ -208,7 +208,7 @@ function renderConnPop() {
   pop.textContent = "";
   if (!i) return;
   pop.append(h("h2", { text: i.identity.replace(/_9?\d+$/, "") }),
-    h("dl", { class: "facts" }, h("dt", { text: "Firmware" }), h("dd", { text: `OpenPocket ${i.version}` }), h("dt", { text: "Port" }), h("dd", { text: i.port }),
+    h("dl", { class: "facts" }, h("dt", { text: "Firmware" }), h("dd", { text: fwLabel(i.version) }), h("dt", { text: "Port" }), h("dd", { text: i.port }),
       h("dt", { text: "Presets" }), h("dd", { text: `${i.nslot}, ${app.slots.filter((s) => s.saved).length} of yours` })),
     h("h3", { text: "Keys" }),
     h("dl", { class: "keys" }, h("dt", { text: "/" }), h("dd", { text: "search the presets" }), h("dt", { text: "[  ]" }), h("dd", { text: "previous, next preset" }),

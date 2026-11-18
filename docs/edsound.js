@@ -73,7 +73,7 @@ function renderHeader() {
   $("compare").disabled = !st.dirty && !cmp;
   $("compare").setAttribute("aria-pressed", cmp ? "true" : "false");
   $("compare").textContent = cmp ? "Back to my changes" : "Compare";
-  document.title = `${st.dirty ? "• " : ""}${slotName(st.slot)} ${st.preset.name} · OpenPocket Editor`;
+  document.title = `${st.dirty ? "• " : ""}${slotName(st.slot)} ${st.preset.name} · ettorebox Editor`;
   $("view-sound").classList.toggle("comparing", cmp);
   for (const id of ["tiles", "block"]) $(id).inert = cmp;
   const lb = gateBlock(), lc = $("plvl");
