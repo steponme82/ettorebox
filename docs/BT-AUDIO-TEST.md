@@ -1,11 +1,12 @@
 # Bluetooth audio test image (A2DP: the phone's music through the pedal)
 
 An optional build of OpenPocket that makes the pedal a **Bluetooth speaker**, as the stock BlackBox firmware is: it shows up on a
-phone as **`OpenPocket`**, pairs with no PIN, and the phone's music plays **mixed into the pedal's output**, with the guitar.
+phone as **`ettorebox`** (as **`OpenPocket`** up to test build 51), pairs with no PIN, and the phone's music plays **mixed into the
+pedal's output**, with the guitar. Since test build 52 it is ettorebox's firmware (README).
 
 It is a test image, its own build target (`make bt`). The normal firmware and the installer's packages are unchanged.
 
-> **Status: test build 51** (below; build 50 runs on a pedal: the guided learn, the scenes and their names; build 38 is the one
+> **Status: test build 52, ettorebox beta 52** (below; build 50 runs on a pedal: the guided learn, the scenes and their names; build 38 is the one
 > played longest, about 2 hours of music). Test build 27 brought the web
 > editor over Bluetooth. Up to test build 14: builds 1 to 10 ran on a pedal: the
 > radio starts, a phone sees the pedal and links, but no phone
@@ -1622,6 +1623,27 @@ the pedal and its line were still there (the editor reads its mode as 0x42).
    line, the pedal does that preset's own job.
 
 Install it from this branch's folder, as before; the start-up screen reads `v42 BT AUDIO TEST 51`.
+
+## Test build 52 (ettorebox beta 52): the pedal's own names
+
+Build 51 under ettorebox's name: the start-up screen reads `ETTOREBOX` and `BETA 52  OPENPOCKET V42` (the OpenPocket
+version it is built on); a phone lists the pedal as `ettorebox`, MIDIWeb (the editor over Bluetooth) as `ettorebox`, and the
+computer's MIDI port is `ettorebox` (USB product and manufacturer). The installer, the editor and `tools/log.mjs` find it by
+that name (`docs/pxota.js` PORT_RE). The update loader keeps OpenPocket's names (`OpenPocket Update`, `ota-OpenPocket_900`):
+they are what every installer looks for to finish an interrupted update. The release image, and the BLE MIDI test image
+(`make ble`), keep OpenPocket's names.
+
+OpenPocket's own installer and editor do not know the new name, so they do not see an ettorebox pedal: use ettorebox's
+pages (README, "Install"); they also take the pedal back to M-VAVE's firmware.
+
+### What to check
+
+1. The start-up screen: `ETTOREBOX`, `BETA 52  OPENPOCKET V42`.
+2. The phone: the pedal reconnects by itself (the pairing is the same address); its Bluetooth list may show the old name
+   until the phone reads it again (forget and pair again if it keeps `OpenPocket`).
+3. MIDIWeb: connect to `ettorebox`; the editor finds it. On the computer, the editor and the installer page find the USB port
+   `ettorebox`.
+4. The Chocolate links as before.
 
 ## Checked on a computer
 

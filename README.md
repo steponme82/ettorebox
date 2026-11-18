@@ -2,15 +2,30 @@
 
 Guitar firmware for the M-VAVE BlackBox, built on [OpenPocket](https://github.com/isod89/openpocket).
 
+
+I've been working on my own firmware for the BlackBox for the last few weeks. It's called ettorebox. 
+
+A tribute to my grandfather, which i never met. He used to live with a guitar in his hands. 
+
+And to my first son, the toughest 11yr old badass this world has ever met.
+
+I work for commercial entities. But when i'm proud of something, i give it the name of my sons. This is my first project, so Ettorebox!
+
+BEWARE: for Blackbox with version 20 or below. I am seeking for bricked blackbox to fix, so contact me if you wanna try to restore this with Ettorebox
+
 ettorebox started as OpenPocket's Bluetooth test image and grew into a firmware of its own: the phone's music through the
 pedal, a Bluetooth footswitch, the web editor over Bluetooth, scenes, a two-job expression pedal and effects of its own.
 It is free software under the GPL-3.0, like OpenPocket.
+
+**[The manual](docs/MANUAL.md):** installing it, every control and page of the pedal, the sounds, presets and scenes,
+controllers, Bluetooth, USB, the web editor, and what is inside.
 
 Not affiliated with M-VAVE, Donner or the OpenPocket maintainers. Install at your own risk.
 
 ## Status
 
-Beta. The latest is beta 51, test build 51 (see Releases). Build 50 runs on its author's BlackBox, and build 38 is the one played
+Beta. The latest is beta 52, test build 52 (see Releases): at start-up the pedal reads `ETTOREBOX`, a phone and the
+computer list it as `ettorebox`. Build 50 runs on its author's BlackBox, and build 38 is the one played
 longest, about two hours of music on stage. [docs/BT-AUDIO-TEST.md](docs/BT-AUDIO-TEST.md) has every test build's notes
 and what to check on each.
 
@@ -50,7 +65,8 @@ and what to check on each.
 11. Tap tempo (CC 116), next and previous preset (CC 118 and 119), the expression pedal (CC 117), and a SETTINGS page
     (input gain, tails, Bluetooth power, output, the scene rules).
 
-The details: [docs/MIDI.md](docs/MIDI.md) (controls, scenes, the two-job pedal, settings), [docs/OWN-FX.md](docs/OWN-FX.md)
+The details: [docs/MANUAL.md](docs/MANUAL.md) (how to use it), [docs/MIDI.md](docs/MIDI.md) (controls, scenes, the two-job
+pedal, settings), [docs/OWN-FX.md](docs/OWN-FX.md)
 (the effects), [docs/BT-AUDIO-TEST.md](docs/BT-AUDIO-TEST.md) (Bluetooth and each test build).
 
 ## What it leaves out
@@ -61,7 +77,8 @@ To fit the Bluetooth stack, compared with OpenPocket:
 - Delay times over 780 ms (REVERSE stops at 390 ms).
 - Lowercase letters on the pedal's screen.
 
-Every model both have plays as OpenPocket's, sample for sample (`tests/ownfx_equiv.sh`).
+Every model it did not change plays as OpenPocket's, sample for sample (`tests/ownfx_equiv.sh`); the ones it changed are in
+[docs/OWN-FX.md](docs/OWN-FX.md).
 
 ## Install
 
@@ -72,7 +89,7 @@ over USB with a data cable, press **Connect**, then **Install**. The web editor 
 From the command line instead, with this repository cloned:
 
 ```
-gh release download beta-51 -R steponme82/ettorebox -D build/bt --clobber
+gh release download beta-52 -R steponme82/ettorebox -D build/bt --clobber
 make serve-bt
 ```
 

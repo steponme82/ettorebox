@@ -9,7 +9,7 @@ import { mkdtempSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Updater, IS_OPENPOCKET } from "../docs/pxota.js";
+import { Updater, IS_OPENPOCKET, PORT_RE } from "../docs/pxota.js";
 import { productOf, logicalImage, checkOfficial } from "../docs/pxpkg.js";
 import { simAccess } from "./simpedal.mjs";
 
@@ -34,6 +34,11 @@ bad = [k for k, v in fw.flash_checks(d, e).items() if not v]
 app = d[0x4000 + e[1]['addr']:0x4000 + e[1]['addr'] + e[1]['len']]
 i = app.find(b'OP-PRODUCT:')
 print(app[i + 11:i + 31].split(b'\\0')[0].decode(), 'CRC-OK' if not bad else 'CRC-BAD')`;
+
+// 0. the MIDI port names the page probes (PORT_RE): OpenPocket's, its update loader's, the official firmware's, and
+//    ettorebox's (its USB and Bluetooth name since beta 52); not another device's
+ok(["OpenPocket", "OpenPocket Update", "ettorebox", "USB-Midi", "BlackBox"].every((n) => PORT_RE.test(n)) && !PORT_RE.test("IAC Driver Bus 1"),
+   "the page finds OpenPocket, its loader, the official firmware and ettorebox by port name, not other devices");
 
 // 1. the package files
 const px = pkg("PocketX_924.fwsc"), bb = pkg("BlackBox_924.fwsc");

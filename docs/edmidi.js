@@ -3,7 +3,7 @@
 // current preset; controls learned from another MIDI device (a foot controller on this computer), which this page
 // passes on to the pedal as editor commands while it is open; and a monitor of what arrives. docs/MIDI.md, docs/pxmidi.js.
 
-import { app, $, h, icon, on, emit, blk, typeOf, slotName, say, confirmDialog } from "./edcore.js";
+import { app, $, h, icon, on, emit, blk, typeOf, slotName, say, confirmDialog, fwLabel } from "./edcore.js";
 import { sendParam, setOn, setType } from "./edsound.js";
 import { selectPreset, stepPreset, refreshState } from "./edpresets.js";
 import { decode, ccParam, ccOn, ccToggle, ccType, ccTarget, resolve, action, learn, cleanMappings, sameTgt, NPAR,
@@ -275,7 +275,7 @@ function renderConn() {
   el.append(
     h("div", { class: "card-head" }, h("h2", { id: "midiconn-h", text: "Connection" })),
     h("dl", { class: "facts" },
-      h("dt", { text: "Pedal" }), h("dd", { text: `${info.identity.replace(/_9?\d+$/, "")} · OpenPocket ${info.version}` }),
+      h("dt", { text: "Pedal" }), h("dd", { text: `${info.identity.replace(/_9?\d+$/, "")} · ${fwLabel(info.version)}` }),
       h("dt", { text: "USB MIDI port" }), h("dd", { text: info.port }),
       h("dt", { text: "Editor protocol" }), h("dd", { text: `version ${info.proto}` }),
       h("dt", { text: "Controllers" }), h("dd", { id: "midictl" }, others.length ? others.map((n) => h("span", { class: "chip ok", text: n })) : h("span", { class: "dim", text: "None. Plug a MIDI controller into this computer and it shows up here." })),

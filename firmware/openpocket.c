@@ -18,7 +18,7 @@
 #endif
 #define FELUCCA_ID "FM-1_900"
 /* the Bluetooth audio test build (docs/BT-AUDIO-TEST.md): its boot text and its id for the second core's bar (app_main) */
-#define BT_TEST_BUILD 51
+#define BT_TEST_BUILD 52
 #define BT_STR_(x) #x
 #define BT_STR(x) BT_STR_(x)
 #define BT_TEST_BUILD_TEXT BT_STR(BT_TEST_BUILD)
@@ -813,9 +813,14 @@ static void app_main(void)
     lcd_init();
     /* boot screen with the version: shows which image is running */
     lcd_rect(0,0,240,240,UI_BG);
+#if OP_BT_AUDIO   /* ettorebox (beta 52): its own name, the OpenPocket version it is built on */
+    ft_box(0, 98, 240, "ETTOREBOX", &FT_MD, UI_ACC, UI_BG, 1);
+    ft_box(0, 126, 240, "BETA " BT_TEST_BUILD_TEXT "  OPENPOCKET " OP_VERSION, &FT_SM, UI_DIM, UI_BG, 1);
+#else
     ft_box(0, 98, 240, "OPENPOCKET", &FT_MD, UI_ACC, UI_BG, 1);
+#endif
 #if OP_BT_AUDIO
-    ft_box(0, 126, 240, OP_VERSION " BT AUDIO TEST " BT_TEST_BUILD_TEXT, &FT_SM, UI_DIM, UI_BG, 1);   /* (2: the stall record; 3: the baseband's window, bt/app-bt.ld;
+    /* until test build 51 this line read "v42 BT AUDIO TEST 51"; the test builds: */   /* (2: the stall record; 3: the baseband's window, bt/app-bt.ld;
                                                                                        * 4: its interrupts above the audio's, ble/ble_os.c; 5: their own entry, bt/bt_irq.c;
                                                                                        * 6: the radio pools' header at the pool, bt/bt_lbuf.h;
                                                                                        * 7: the HCI events in the log, bt/bt_a2dp.c;
@@ -922,8 +927,13 @@ static void app_main(void)
 #endif
             for (int i = 0; i < 120; i++) { fm1_wdt_feed(); fm1_delay_ms(100); }   /* 12 s */
             lcd_rect(0, 0, 240, 240, UI_BG);
+#if OP_BT_AUDIO
+            ft_box(0, 98, 240, "ETTOREBOX", &FT_MD, UI_ACC, UI_BG, 1);
+            ft_box(0, 126, 240, "BETA " BT_TEST_BUILD_TEXT " SAFE MODE", &FT_SM, UI_DIM, UI_BG, 1);
+#else
             ft_box(0, 98, 240, "OPENPOCKET", &FT_MD, UI_ACC, UI_BG, 1);
             ft_box(0, 126, 240, OP_VERSION " SAFE MODE", &FT_SM, UI_DIM, UI_BG, 1);
+#endif
         }
 #if OP_BLE_TEST
         ble_last = (ble_boot_t){ st != ST_OK || crashed, crashed, st, op_diag.blocks, op_diag.load, op_diag.peak, op_diag.nans, op_diag.c1,

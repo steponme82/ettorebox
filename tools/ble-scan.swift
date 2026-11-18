@@ -30,7 +30,7 @@ final class Scanner: NSObject, CBCentralManagerDelegate {
   func centralManager(_ c: CBCentralManager, didDiscover p: CBPeripheral, advertisementData ad: [String: Any], rssi: NSNumber) {
     let name = (ad[CBAdvertisementDataLocalNameKey] as? String) ?? p.name ?? ""
     let services = (ad[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID])?.map { $0.uuidString } ?? []
-    if name.contains("OpenPocket") || services.contains(midi) {
+    if name.contains("OpenPocket") || name.contains("ettorebox") || services.contains(midi) {
       emit(["id": p.identifier.uuidString, "name": name, "rssi": rssi.intValue, "services": services,
             "connectable": (ad[CBAdvertisementDataIsConnectable] as? NSNumber)?.boolValue ?? false])
     } else { others.insert(p.identifier) }

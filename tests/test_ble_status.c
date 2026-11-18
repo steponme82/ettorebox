@@ -95,7 +95,11 @@ int main(void)
       if (strncmp(w, "ADV i0 e2 ", 10)) { printf("FAIL: the numbers are not first on screen: \"%s\"\n", w); bad++; } }
     /* the advertisement against the Core Specification (ble_adv.h) */
     { static const uint8_t uuid_le[16] = { 0x00,0xC7,0xC4,0x4E,0xE3,0x6C,0x51,0xA7,0x33,0x4B,0xE8,0xED,0x5A,0x0E,0xB8,0x03 };
+#if OP_BT_AUDIO
+      static const char name[] = "ettorebox";                        /* (the Bluetooth audio image: ettorebox since beta 52) */
+#else
       static const char name[] = "OpenPocket";
+#endif
       unsigned n, i; int flags = 0, uuid = 0;
       for (n = 0; n < sizeof ble_adv_data; ) {                       /* length-type-value structures, no padding, no overrun */
           unsigned l = ble_adv_data[n];

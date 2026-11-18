@@ -1,14 +1,14 @@
 {
   "version": 42,
-  "label": "beta 51",
-  "notes": "https://github.com/steponme82/ettorebox/releases/tag/beta-51",
+  "label": "beta 52",
+  "notes": "https://github.com/steponme82/ettorebox/releases/tag/beta-52",
   "packages": [
     {
       "model": "BlackBox",
       "product": "BlackBox_942",
       "file": "BlackBox_942.fwsc",
       "size": 676083,
-      "sha256": "fbf67e0f0b479b8ae941f5d5a8dc228a31b22682c7fb4661c4cb8c8f0f597ea0"
+      "sha256": "e828ba3f47b28e90bac7de82b3e0159e7d6c2bd48448a9e370fea1fee6a54201"
     }
   ]
 }
