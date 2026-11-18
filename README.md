@@ -10,7 +10,7 @@ Not affiliated with M-VAVE, Donner or the OpenPocket maintainers. Install at you
 
 ## Status
 
-Beta. The latest test build is 51 (see Releases). Build 50 runs on its author's BlackBox, and build 38 is the one played
+Beta. The latest is beta 51, test build 51 (see Releases). Build 50 runs on its author's BlackBox, and build 38 is the one played
 longest, about two hours of music on stage. [docs/BT-AUDIO-TEST.md](docs/BT-AUDIO-TEST.md) has every test build's notes
 and what to check on each.
 
@@ -65,14 +65,18 @@ Every model both have plays as OpenPocket's, sample for sample (`tests/ownfx_equ
 
 ## Install
 
-From a release (Chrome or Edge on a computer, the pedal on USB with a data cable):
+Open the installer page, **https://steponme82.github.io/ettorebox/**, in Chrome or Edge on a computer. Plug the pedal in
+over USB with a data cable, press **Connect**, then **Install**. The web editor is at
+**https://steponme82.github.io/ettorebox/editor.html** (over USB, or over Bluetooth from MIDIWeb on an iPhone).
+
+From the command line instead, with this repository cloned:
 
 ```
-gh release download bt-test-51 -D build/bt --clobber
+gh release download beta-51 -R steponme82/ettorebox -D build/bt --clobber
 make serve-bt
 ```
 
-Open the address it prints, press **Connect**, then **Install**. The web editor is at `/editor.html` on the same address.
+Then open the address it prints and do the same.
 
 ## Build and test
 

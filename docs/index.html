@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>OpenPocket Installer</title>
+<title>ettorebox Installer</title>
 <meta name="description" content="Install OpenPocket on a Donner Pocket X or M-VAVE BlackBox from the browser, over USB.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@400;600&display=swap">
@@ -56,7 +56,7 @@ footer a,.note a{color:inherit}
 <div class="wrap">
   <header>
     <div>
-      <h1>Open<span>Pocket</span></h1>
+      <h1>ettore<span>box</span></h1>
       <p class="tag" data-t="tag"></p>
     </div>
     <a class="alt" id="toeditor" href="editor.html" data-t="toeditor" style="text-decoration:none;align-self:center;font:600 14px/1 Inter,sans-serif;padding:11px 16px;border-radius:10px;border:1px solid var(--line);color:var(--ink)"></a>
@@ -140,13 +140,13 @@ import { BLACKBOX_V21, verifyFactorySounds } from "./pxfactory.js";
 
 const T = {
   en: {
-    tag: "Install OpenPocket, the open-source guitar firmware, on a Donner Pocket X or an M-VAVE BlackBox — from the browser, over the USB cable.",
+    tag: "Install ettorebox, guitar firmware built on OpenPocket, on an M-VAVE BlackBox, from the browser, over the USB cable. Beta.",
     nomidi: "This browser has no Web MIDI. Use Chrome or Edge on a computer (Windows, macOS, Linux, ChromeOS).",
     s1: "Connect the pedal", s1note: "Turn the pedal on, plug it in over USB (a data cable) and close any other app using it. The browser asks for MIDI access: allow it.",
     connect: "Connect", idle: "waiting", searching: "searching…", found: "pedal found", none: "no pedal", busy: "working…",
     pedal: "Pedal", firmware: "Firmware", port: "MIDI port",
-    official: "official", opfw: "OpenPocket", loader: "update mode (loader)",
-    s2: "Install OpenPocket", s2note: "Available version:",
+    official: "official", opfw: "OpenPocket or ettorebox", loader: "update mode (loader)",
+    s2: "Install ettorebox", s2note: "Available version:",
     s2warn: "During the install (about 1 to 2 minutes): do not unplug or switch the pedal off, keep this tab open. Nothing is written before the pedal has checked the package. First install over the official firmware: keep your backup (SD card / fm1buddy) at hand. A BlackBox with M-VAVE's firmware V22 or later is not supported yet: the page and the pedal refuse it, nothing is written.",
     install: "Install", resume: "Resume the update",
     st_start: "start", st_verify: "check", st_loader: "loader", st_write: "write", st_reboot: "restart", st_done: "done",
@@ -158,11 +158,11 @@ const T = {
     rescuenote: "If the pedal stays in update mode, reconnect it: the Resume button appears. The button below puts a pedal running OpenPocket into the chip's UBOOT mode, for a recovery from the SD card (fm1buddy).",
     rescuemac: "A pedal that restarts in a loop and cannot be reached by this page can be restored from a Mac, with no extra hardware: download the official BlackBox file (M-VAVE), then run `make rescue` in the OpenPocket folder (read-only check), and `make rescue-write` to restore it. The steps are in docs/RESCUE.md; the SD-card route (fm1buddy, flash/) is the second choice.",
     uboot: "Enter UBOOT mode", logt: "Log",
-    foot1: "OpenPocket is an independent project, not affiliated with Donner or M-VAVE. Install at your own risk. Source code: GPL-3.0.",
+    foot1: "ettorebox is built on OpenPocket (github.com/isod89/openpocket) and is not affiliated with Donner, M-VAVE or OpenPocket's maintainers. Install at your own risk. Source code: GPL-3.0, github.com/steponme82/ettorebox.",
     foot2: "Update protocol and loader from Felucca and felucca-bsp (Hügelton Instruments, GPL-3.0 / MPL-2.0). JieLi AC79 SDK files: Apache-2.0. Inter typeface: SIL OFL 1.1.",
     e_notfound: "Pedal not found. Check the cable (data), close other MIDI apps, then try again.",
     testchan: "TEST CHANNEL: this installs a test build, not the release. It is for people who agreed to try it, and it is not the version the normal installer page offers. To go back, open this page without ?channel=… and press Install.",
-    bbwarn: "M-VAVE BlackBox: v31 is the fix for issue #1 (OpenPocket restarted every 4 s after the pedal was switched off and on), still being tested on the BlackBox. Please report how it goes on GitHub. If your BlackBox restarts in a loop, use the rescue mode below.",
+    bbwarn: "ettorebox is a beta: keep M-VAVE's own firmware file at hand, and the rescue steps (RESCUE.md in the repository). Not on a BlackBox with M-VAVE's firmware V22 or later: this page and the pedal refuse it.",
 toeditor: "Preset editor →",
         rescueon: "Rescue mode, for a pedal that restarts in a loop: tick this, press Connect, then plug the pedal in (or let it restart). The install starts by itself as soon as the pedal answers; it stops the pedal's sound processing at once, so the restarts stop. It installs the official file chosen in step 3 if there is one for this pedal, otherwise OpenPocket.",
     e_model: "This package is not for this pedal: ", e_lost: "The pedal was disconnected. Plug it back in and press Resume.",
@@ -207,7 +207,7 @@ async function loadManifest() {
   try {
     const r = await fetch(FW + "manifest.json", { cache: "no-store" });
     manifest = await r.json();
-    $("pkgver").textContent = "v" + manifest.version + (CHANNEL ? " (" + CHANNEL + ")" : "");
+    $("pkgver").textContent = (manifest.label || "v" + manifest.version) + (CHANNEL ? " (" + CHANNEL + ")" : "");   /* (label: ettorebox) */
   } catch (e) { $("pkgver").textContent = "—"; log("manifest: " + e.message); }
 }
 
@@ -293,9 +293,9 @@ async function run(job, resultMessage) {
     const v = !resultMessage && /^(?:PocketX|BlackBox)_9(\d\d)$/.exec(res);
     const message = resultMessage || (firmwareOnly
       ? "V21 firmware booted. Verify or restore the factory sounds in step 3."
-      : t("done") + (v ? `${t("opfw")} v${+v[1]} (${res})` : res));
+      : t("done") + (v && manifest && manifest.label ? `ettorebox ${manifest.label} (${res})` : v ? `${t("opfw")} v${+v[1]} (${res})` : res));
     setMsg($("msg"), message, firmwareOnly ? "" : "ok");
-    if (v) { $("notes").href = `WHATS-NEW-v${+v[1]}.md`; $("next").hidden = false; }
+    if (v) { $("notes").href = manifest && manifest.notes ? manifest.notes : `WHATS-NEW-v${+v[1]}.md`; $("next").hidden = false; }
     log(message);
   } catch (e) {
     setMsg($("msg"), errText(e), "err");
