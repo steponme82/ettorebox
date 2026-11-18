@@ -262,3 +262,53 @@ Driver setup: `iis_open` IIS_PORTA, channel_in = BIT(1), channel_out = BIT(0), m
 - Screen: PLAY (number and name large, amp / cab, the chain in colour, the selected block) and EDIT (the block on its
   colour, model, 5 settings with value + bar), new Inter fonts (26 and 58 px). `tests/uisim.c` draws every page on
   the PC and checks that each full page paints every pixel.
+
+## v37: NAM A2-Lite, user models
+- AMP type 8, NAM: a Neural Amp Modeler A2-Lite network (3 channels, 23 dilated layers, LeakyReLU, 16-tap head;
+  1871 weights, about 1,730 multiply-adds a sample) in fixed point, `engine/px_nam.c` ([NAM.md](NAM.md)). Activations
+  Q20, weights Q24, 64-bit sums shifted by a constant. Against the float reference (`tools/nam_a2.py`): 83 to 100 dB
+  signal to error on the factory models (`tests/test_nam.py`).
+- This CPU has no data cache in front of the SRAM, a taken branch costs about 8 cycles, and it issues two
+  instructions together (a 32-bit multiply-add with a 16-bit load). A first version (a loop over taps per frame,
+  16-frame chunks) measured 223 % of real time on the pedal. Now: blocks of 32 frames, layer by layer. Gather: each
+  frame's inputs to the layer into one row of X (`[u, 1.0, taps x 3 channels]`, 3 words a move), from the layer's
+  ring (interleaved [time][channel], (kernel - 1) x dilation + 32 frames). Dot: the layer's 3 weight rows against 4 X
+  rows at a time (`pxn_dot3x4_asm`: a weight read once for 4 frames, 4 multiply-adds paired with 4 loads, 5 issues,
+  in the hardware loop). Post: LeakyReLU (predicated, no branch), the head sum, the residual 1x1 written straight
+  into the next layer's ring. The head is a 50-long row (bias, 16 taps x 3) over the head's ring. The hand routines
+  are in the flash with their callers; `px_nam_check()` compares them with the C ones at boot (pattern with both
+  signs, rows of 20 and 47, with and without the residual) and keeps C on any difference.
+- Memory: the rings (83.4 KB) in the POOL region beside the engine, the model (weights converted, 8 KB) and the
+  block buffers (7 KB) in RAM. A direct call between the flash (0x02xxxxxx) and the RAM code (0x01C0xxxx) is out of
+  the call instruction's +-4 MiB: `tools/check_calls.py`, run by `firmware/build.sh` before linking, refuses any such
+  call and names it (a first v37 build put the audio path in RAM: the linker refused 478 calls, naming only one).
+- User models: 16 slots of 8 KiB at 0xC0000 (`firmware/px_models.h`), written by the editor (protocol 2); the update
+  loader keeps that range (`loader/ldr_core.c`, `LDR_NAM_LO/HI`). The weights are read from the flash (SPI, with the
+  audio held) when a preset picks the model.
+- Level: every model plays at the same loudness: a trim per model (-20 LUFS on `docs/nam_di.wav`, measured by the
+  editor for user models and by `tools/mk_nam_factory.py` for the factory ones), then one constant that puts NAM +
+  1x12 at GAIN noon at the fitted amps' -23 LUFS.
+- 24 factory presets rebuilt on the 12 factory NAM models, levelled by `tools/level_presets.py`; USER slots: NAM TWIN.
+
+## v40: the audio path in RAM, the delays at half rate (the stock firmware's way)
+- The per-block code runs from RAM, as the stock firmware's per-sample library does (66 KB copied at boot). The 478
+  refused calls of the first v37 try came from the RAM code's place: at `0x01C0xxxx` it is just out of the call
+  instruction's +-4 MiB of the flash. `RAMTEXT` now sits at `0x01C5E000..0x01C74000`, within reach of every flash
+  address up to `0x0205E000` (`app.ld` asserts it). So the flash and the audio path call each other directly, and no
+  pointer is needed.
+- How the code gets there: `px_dsp.c` is compiled with `-ffunction-sections`, then `tools/ramcode.py` renames the listed
+  functions' sections (`.text.NAME` to `.ram_text.dsp.NAME`) and px_dsp.o's plain `.text` (the hand-written routines).
+  `openpocket.o` gets the same for the audio interrupt's own functions. The source carries no attribute, so the
+  compiler inlines exactly as before (this compiler does not inline into a function that has a section of its own:
+  v37's note). About 75 KB moves.
+- `check_calls.py` lets `.ram_text.dsp.*` call the flash and be called from it, and still refuses it for the code that
+  runs with the flash off (`.ram_text` proper, `.c1_text`).
+- The room for it: the delay line at 22.05 kHz, as the stock delays (88 KB for 2 s instead of 175 KB). `POOL` goes from
+  336 to 248 KB.
+- Delay at half rate: one tick every two samples, with the pair averaged in, the output interpolated between the last two
+  ticks, and a fixed lift `1.15 d - 0.15 d_prev` on the wet output. Glide and envelope coefficients are doubled, and
+  depths and LFO steps are converted to ticks; the lane's lag is 128 ticks. On the lead loop through an amp and a
+  cabinet, the wet part is within 0.1 dB, and within 0.4 dB up to 6 kHz. `tests/engine/wet_test.c` still checks the
+  lane against the inline delay, bit for bit.
+- Reverb: the low cut after the tank runs at the tank's rate. TONE stays at the full rate, because it takes down the
+  half rate's images. The output is within 2e-4 of v39 on every type.

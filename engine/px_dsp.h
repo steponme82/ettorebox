@@ -35,17 +35,56 @@ extern "C" {
 enum { PX_B_GATE, PX_B_COMP, PX_B_PITCH, PX_B_SFX, PX_B_DRIVE, PX_B_AMP, PX_B_CAB, PX_B_EQ, PX_B_MOD,
        PX_B_DELAY, PX_B_REVERB, PX_B_SYN, PX_NBLK };   /* SYN appended (v29): older presets keep their indices */
 #define PX_NPAR 5
+/* PX_OWN_FX: the Bluetooth audio image's own engine (firmware/build.sh sets it under OP_BT only), with its own effects:
+ * LOW OCTAVE, the 6th PITCH model, and PAD, the 12th SYN model (docs/OWN-FX.md), each appended to its block's models so
+ * every preset keeps its meaning. They are paid for there: the drive and delay code no model reaches is left out (the same
+ * sound, bit for bit, in less RAM code: px_dsp.c, tests/ownfx_equiv.sh), and their state sits in the 912 bytes the delay
+ * ring gives up (PX_DLY_N), so px_engine keeps its size and every other field its offset. Without it (the release, the BLE
+ * image, the simulator) the engine is v42's, to the preprocessed text. */
+#ifndef PX_OWN_FX
+#define PX_OWN_FX 0
+#endif
 
 enum { PX_CMP_SQUASH, PX_CMP_STUDIO, PX_CMP_OPTO, PX_CMP_SWELL, PX_CMP_COUNT };
+#if PX_OWN_FX
+enum { PX_PIT_OCTAVER, PX_PIT_POLYOCT, PX_PIT_WHAMMY, PX_PIT_HARMONY, PX_PIT_DETUNE, PX_PIT_LOWOCT, PX_PIT_COUNT };
+#else
 enum { PX_PIT_OCTAVER, PX_PIT_POLYOCT, PX_PIT_WHAMMY, PX_PIT_HARMONY, PX_PIT_DETUNE, PX_PIT_COUNT };
+#endif
+#if PX_OWN_FX   /* test build 45: WAH, a wah pedal (the expression pedal on CC 117, else PEDAL; Q, RANGE, LEVEL) */
+enum { PX_SFX_AUTOWAH, PX_SFX_LFOWAH, PX_SFX_RING, PX_SFX_CRUSH, PX_SFX_SLICER, PX_SFX_LOFI, PX_SFX_SYNTH, PX_SFX_WAH, PX_SFX_COUNT };
+#else
 enum { PX_SFX_AUTOWAH, PX_SFX_LFOWAH, PX_SFX_RING, PX_SFX_CRUSH, PX_SFX_SLICER, PX_SFX_LOFI, PX_SFX_SYNTH, PX_SFX_COUNT };
+#endif
+#if PX_OWN_FX   /* test build 40: TREBLE BOOST, a germanium treble booster (BOOST, RANGE FULL / MID / TREBLE, LEVEL) */
+enum { PX_DRV_TS9, PX_DRV_KLON, PX_DRV_M77, PX_DRV_HM2, PX_DRV_TREBLE, PX_DRV_COUNT };
+#else
 enum { PX_DRV_TS9, PX_DRV_KLON, PX_DRV_M77, PX_DRV_HM2, PX_DRV_COUNT };
+#endif
 enum { PX_AMP_TWIN, PX_AMP_AC15, PX_AMP_JCM900, PX_AMP_JCM2000, PX_AMP_MARK4, PX_AMP_SHIRLEY, PX_AMP_PROMOD,
        PX_AMP_5150, PX_AMP_COUNT };
+/* v37: Neural Amp Modeler A2-Lite (px_nam.c) as one more AMP type, after the 8 fitted amps. Its 5 settings: MODEL,
+ * GAIN (into the model, +-12 dB), BASS, MID, TREBLE (after it). Models: PX_NAM_NFACT in the firmware, PX_NAM_NUSER
+ * slots the web editor fills with A2 captures (.nam files, e.g. from TONE3000). */
+#define PX_AMP_NAM    PX_AMP_COUNT
+#define PX_AMP_NTYPES (PX_AMP_COUNT + 1)
+#define PX_NAM_NFACT  12
+#define PX_NAM_NUSER  16
+#define PX_NAM_N      (PX_NAM_NFACT + PX_NAM_NUSER)
 enum { PX_CAB_112JN, PX_CAB_212BLUE, PX_CAB_412GB, PX_CAB_412T75, PX_CAB_412V30, PX_CAB_112CREAM, PX_CAB_DI,
-       PX_CAB_COUNT };
+       PX_CAB_IR, PX_CAB_COUNT };      /* v38: USER IR, a cabinet impulse response loaded from the editor */
+/* v38: user cabinet IRs. PX_IR_N slots (the firmware keeps them in flash: firmware/px_irs.h); the engine plays the first
+ * PX_IR_LEN taps (23 ms at 44.1 kHz) by uniform partitioned FFT convolution, 64-frame partitions. Its settings: IR (the
+ * slot), LOW CUT, HIGH CUT. */
+#define PX_IR_N   8
+#define PX_IR_LEN 1024
+#if PX_OWN_FX
+enum { PX_SYN_ORGAN, PX_SYN_CHURCH, PX_SYN_STRINGS, PX_SYN_CHOIR, PX_SYN_MONO, PX_SYN_PWM, PX_SYN_BASS,
+       PX_SYN_12STR, PX_SYN_ACOUSTIC, PX_SYN_SITAR, PX_SYN_BARI, PX_SYN_PAD, PX_SYN_FLUTE, PX_SYN_COUNT };   /* (test build 44: FLUTE) */
+#else
 enum { PX_SYN_ORGAN, PX_SYN_CHURCH, PX_SYN_STRINGS, PX_SYN_CHOIR, PX_SYN_MONO, PX_SYN_PWM, PX_SYN_BASS,
        PX_SYN_12STR, PX_SYN_ACOUSTIC, PX_SYN_SITAR, PX_SYN_BARI, PX_SYN_COUNT };
+#endif
 enum { PX_EQ_5BAND, PX_EQ_GEQ, PX_EQ_PARAM, PX_EQ_COUNT };
 enum { PX_MOD_CHORUS, PX_MOD_DIMENSION, PX_MOD_FLANGER, PX_MOD_PHASE90, PX_MOD_STONE, PX_MOD_UNIVIBE,
        PX_MOD_OPTOTREM, PX_MOD_BIASTREM, PX_MOD_HARMTREM, PX_MOD_ROTARY, PX_MOD_VIBRATO, PX_MOD_COUNT };
@@ -77,20 +116,92 @@ const char *px_param_name(int blk, int type, int k);
 int         px_type_v34(int blk, int old);   /* presets saved before v34: old type -> new */
 #define PX_PATCH_LEVEL 2                /* the preset LEVEL: p[PX_B_GATE][2] ("PRESET LVL" on the GT page), 50 = 0 dB (v36) */
 int         px_dly_time_v35(int type, int v);   /* presets saved before v35: delay TIME (20..1000 ms) -> today's knob */
+int         px_dly_value_for_ms(int type, float ms);   /* the TIME value nearest to a delay of ms (MIDI clock sync) */
 int         px_param_text(int blk, int type, int k, int v, char *buf8);
 int         px_preset_count(void);
+/* NAM models: the MODEL knob (0..100) <-> model 0..PX_NAM_N-1 (factory first, then the user slots) */
+int         px_nam_model(int v);
+int         px_nam_knob(int model);
+int32_t    *px_nam_scratch(void);                    /* bench: the NAM ring memory as scratch (PXN_TEST_WORDS+) */
+int         px_nam_check(uint32_t (*ticks)(void));    /* start-up: NAM routines checked, then (ticks given) its
+                                                         fastest way to run chosen (1 = hand routines in use) */
+uint32_t    px_nam_tuned(int mode);                   /* that timing: ticks for 256 frames, by mode (0 = n/a) */
+int         px_nam_equiv(int mode);                   /* the hand routines against C, whole network: blocks that differ */
+int         px_nam_lp_equiv(void);                    /* v40.2: the layer split against one core, both cores: blocks that differ */
+void        px_nam_helper(int (*run)(void (*fn)(uint32_t), uint32_t arg), int (*wait)(void));   /* the other core */
+void        px_nam_fast(void *base, unsigned bytes);   /* memory away from the CPUs' RAM, for the vector unit (before px_nam_check) */
+/* v40.2: the network split between the cores by layers (engine/px_nam.c pxn_lp_*), for the two-core pipeline: memory
+ * (px_nam_lp_mem, PX_NAM_LP_BYTES), on or off for this engine (px_nam_lp: on only if it can run; the queue emptied),
+ * the other core's part (px_nam_lp_b: 1 = a block finished; both declared after px_engine), blocks waiting for it,
+ * CPU0's share (layers 0..s) */
+#define     PX_NAM_LP_BYTES PXN_LP_BYTES
+void        px_nam_lp_mem(void *base, unsigned bytes);
+uint32_t    px_nam_lp_queued(void);
+int         px_nam_lp_split_used(void);               /* v40.4: the last block's share (it follows the one asked without */
+void        px_nam_lp_force(void);                    /* waiting for the other core, unless forced: px_nam.c pxn_lp_a) */
+uint32_t    px_nam_lp_handed(void);                   /* v40.4: blocks handed over so far; one handed over before that */
+int         px_nam_lp_before(uint32_t upto);          /* count is not finished; the network's work in layers 0..s, in */
+uint32_t    px_nam_lp_share(int s);                   /* 1/1024 of the whole */
+void        px_nam_lp_split(int s);
+int         px_nam_lp_split_now(void);
+void        px_nam_lp_clock(uint32_t (*ticks)(void), uint32_t limit);   /* v40.5: CPU0's waits for the other core end */
+int         px_nam_lp_gave_up(void);                  /* after limit ticks; 1 = one did (retire that core, reset) */
+int         px_nam_name(int model, char *buf12);         /* 1 = the model exists ("U5 EMPTY" otherwise) */
+/* the user slots, provided by the firmware (flash; px_dsp.c has a weak, empty stand-in):
+ * 1 = slot holds a model; its name (11 chars max), its level trim (dB); w (1871 floats) only if w != 0 */
+int         px_nam_user(int slot, char *name12, float *level_db, float *w);
 void        px_preset_factory(px_preset_t *p, int idx);
+/* v38: the IR slots, provided by the firmware (px_dsp.c has a weak, empty stand-in): 1 = the slot holds an IR; its name
+ * (11 chars max); h (PX_IR_LEN floats at 44.1 kHz) only if h != 0 */
+int         px_ir_user(int slot, char *name12, float *h);
+int         px_ir_slot(int v);                          /* the IR knob (0..100) -> slot 0..PX_IR_N-1 */
+int         px_ir_knob(int slot);
+int         px_ir_name(int slot, char *buf12);          /* 1 = the slot holds an IR ("IR3 EMPTY" otherwise) */
 
 /* ---------------------------------------------------------------- state --- */
 typedef struct { float b0, b1, b2, a1, a2, z1, z2; } px_bq;
 typedef struct { float b0, b1, a1, z; } px_op;      /* first-order section (RC) */
+typedef struct { float x[6], y[6]; } px_hb;           /* v38: a half-band filter's all-pass sections (x2 up or down) */
 
 #define PX_PS_N 2048                   /* pitch shifter buffer (46 ms) */
+#if PX_OWN_FX
+#define PX_LO_DEC 8                    /* LOW OCTAVE: its low band at sr / 8 (5.5 kHz) */
+#define PX_PAD_DEC 8                   /* SYN PAD: its grains at sr / 8 */
+#define PX_PAD_NORM 1.05f              /* SYN PAD: MIX 50 = about the chord's own level */
+#ifndef PX_PAD_NG
+#define PX_PAD_NG 2                    /* SYN PAD: grains per slice, crossing over in phase (4: 4 dB of wobble, 2: 2.3) */
+#endif
+#endif
 #define PX_SYN_CB 1024                 /* SYN: ensemble / doubler / body reflections (23 ms) */
-#define PX_DLY_N 89600                 /* 2.03 s of delay (16-bit: 175 KB) */
+/* PX_DLY_SHORT (test build 24, the Bluetooth audio image: firmware/build.sh): the longest delay 780 ms, as M-VAVE's V21 cut its
+ * delays (Analog 1000 -> 781 ms, dTape 790...), the ring 18,176 ticks (36 KB) instead of 45,056 (88 KB): 53,760 bytes of the
+ * pool for the radio's RAM (BLE MIDI, the music's buffers). Both sides of tests/ownfx_equiv.sh build with it, and rc_delay cuts
+ * TIME at PX_DLY_MAX_TICKS on both, so PX_OWN_FX stays bit for bit with it too */
+#ifndef PX_DLY_SHORT
+#define PX_DLY_SHORT 0
+#endif
+#if PX_DLY_SHORT
+#define PX_DLY_RING 18176
+#define PX_DLY_MAX_TICKS 17199                         /* 780 ms at 22.05 kHz (TAPE's wow and flutter read up to 364 further) */
+#define PX_DLY_REV_MAX_TICKS 8600                      /* REVERSE: 390 ms. It reads a window as long as TIME back from where the head
+                                                   * was while the head writes the next one: 2 x TIME must fit the ring (17,720) */
+#else
+#define PX_DLY_RING 45056                              /* v40: 2.04 s of delay at half rate (22.05 kHz, 16-bit: 88 KB), as the stock */
+#endif
+#if PX_OWN_FX
+#define PX_DLY_N (PX_DLY_RING - 456)   /* the Bluetooth image: 456 ticks less, the room its own effects' state takes (the
+                                          longest delay stays 2 s, or 780 ms with PX_DLY_SHORT: px_dsp.c rc_delay) */
+#else
+#define PX_DLY_N PX_DLY_RING
+#endif
 #define PX_RV_M 16384                  /* reverb memory: one 16-bit ring (32 KB) at half rate, laid out per type */
 #define PX_CABM 6                      /* cabinet detail: cone breakup modes (2-pole resonators) */
 #define PX_CABT 8                      /* cabinet detail: sparse taps (mic comb, back wave) */
+typedef struct {                       /* cabinet detail: its taps, breakup resonators and gain (v38: one struct, so */
+    float tg[PX_CABT], m[PX_CABM][3], dg;   /* that a new set can be made away from the engine) */
+    uint8_t ti[PX_CABT]; int nt;
+} px_cabd;
+#define PX_GL_MAX 64                   /* v38: the most settings that glide (px_dsp.c: GL_F) */
 
 typedef struct {
     float sr;
@@ -112,13 +223,23 @@ typedef struct {
     float sfx_a, sfx_b, sfx_c, sfx_d, sfx_mix, sfx_qd;
     int   sfx_pat, crush_n, crush_k; float crush_v, crush_q;
     px_bq sfx_f1, sfx_f2;
-    /* oversampling (set A: amp, or drive + amp together; set B: a drive that is not right before the amp) */
-    px_bq os_up, os_up2, os_dn, os_dn2;
-    px_bq osb_up, osb_up2, osb_dn, osb_dn2;
+    /* oversampling (set A: amp, or drive + amp together; set B: a drive that is not right before the amp; set C: x2, a
+     * drive before a NAM amp). v38: polyphase IIR half-band filters (two all-pass branches, one multiply a section), in
+     * two x2 stages: per set the state of stage 1 up, stage 2 up, stage 2 down, stage 1 down */
+    px_hb os_a[4], os_b[4], os_c[4];
+    int drv_os;                                       /* the drive's oversampling: PX_OVERSAMPLE, or 2 before a NAM amp */
+    struct { int32_t x1, x2, y1, y2; } fq_cab[8];    /* v37: the integer filters' state (px_fx_int) */
     uint8_t ord[PX_NBLK];
     /* synth / instrument block (v29) */
+#if PX_OWN_FX
+    union { float syn_buf[PX_PS_N]; int16_t syn_pad[2 * PX_PS_N]; };   /* shifter source (organ, strings...); */
+    int syn_w;                                        /* sitar: string combs; PAD: two of its three slices */
+    union { float syn_cb[PX_SYN_CB]; int16_t syn_pad2[2 * PX_SYN_CB]; };   /* PAD: its third slice */
+    int syn_cw;
+#else
     float syn_buf[PX_PS_N]; int syn_w;                 /* shifter source (organ, strings...); sitar: string combs */
     float syn_cb[PX_SYN_CB]; int syn_cw;
+#endif
     float syn_ph[3], syn_off[3][2], syn_inc[3], syn_W[3], syn_lvl[3]; int syn_nv;
     float syn_dry, syn_out, syn_d8;                    /* dry guitar, effect level, organ 8' (the guitar's own pitch) */
     float syn_env, syn_slow, syn_ea, syn_er, syn_sr2;  /* envelope (fast, slow), coefficients */
@@ -144,11 +265,17 @@ typedef struct {
     px_op amp_hp[4], amp_lp[4];
     px_bq ts_low, ts_mid, ts_high, amp_pres, amp_res, amp_voice;
     float amp_sag, amp_sagk, amp_pw, amp_pwn, amp_out;
+    /* NAM (v37): one model at a time (its network and history: px_dsp.c, outside this struct) */
+    int   amp_nam, nam_idx;                            /* AMP type is NAM; the model loaded (-1: none) */
+    float nam_in_g, nam_out_g;
+    float nam_buf[PX_MAX_BLOCK];
     /* cabinet */
     px_bq cab[8]; float cab_g; int cab_n;
     /* fine structure (v27: same response as v25's 128-tap FIR, ~4x cheaper): sparse taps + breakup resonators */
-    float cab_rb[64], cab_tg[PX_CABT], cab_m[PX_CABM][3], cab_ms[PX_CABM][2], cab_dg;
-    uint8_t cab_ti[PX_CABT]; int cab_rw, cab_nt, cab_firon;
+    float cab_rb[64], cab_ms[PX_CABM][2];
+    px_cabd cd; int cab_rw, cab_firon;
+    int   ir_slot;                                     /* v38: the IR loaded (-1: none; its spectra: px_dsp.c) */
+    px_bq ir_lo, ir_hi;                                /* its LOW CUT and HIGH CUT */
     /* eq */
     px_bq eq[5]; int eq_n;
     /* modulation */
@@ -158,7 +285,38 @@ typedef struct {
     float ph_z[4], ph_fb, ph_lo, ph_hi, uv_k[4], uv_lamp, uv_up, uv_dn, trem_g, trem_att, trem_rel;
     float rot_h, rot_d, rot_hs, rot_ds, rot_ht, rot_dt, rot_hk, rot_dk, rot_bal;
     /* delay */
-    int16_t dly_buf[PX_DLY_N]; int dly_w, dly_type, dly_heads, rev_start, rev_cnt;
+    /* v40: the line runs at half rate (22.05 kHz) like the stock firmware's delays: one tick every two samples (the two
+     * inputs averaged in), the output interpolated between the last two ticks; times and depths below are in ticks */
+#if PX_OWN_FX
+    int16_t dly_buf[PX_DLY_N];
+    /* the Bluetooth image's own effects, in the 912 bytes the delay ring gives up (PX_DLY_N): every other field keeps its
+     * offset, px_engine its size (px_dsp.c checks both) */
+    /* LOW OCTAVE: the lowest note below RANGE (or of the whole chord: LOWEST) an octave down, the dry signal
+     * untouched. Its low band runs at sr / PX_LO_DEC. */
+    px_bq lo_aa[2], lo_sel[3], lo_hp;
+    int lo_k;
+    float lo_y0, lo_y1, lo_lp, lo_lpk, lo_dry, lo_lvl;
+    float lo_g, lo_gk, lo_gn, lo_glp, lo_glk;         /* GROWL: the octave alone through a soft clipper */
+    float lo_ax[8][2], lo_ay[8][2], lo_ad, lo_hr, lo_hi;   /* phase halving: the 90-degree pair, the half phase */
+    float lo_t[6], lo_tk;                             /* the tilt: the lowest note leads the phase */
+    int lo_np, lo_lowest;
+    float lo_bx[8][2], lo_by[8][2], lo_bd;            /* a second 90-degree pair, on the band before the tilt */
+    float lo_amp, lo_aatk, lo_arel, lo_c;             /* the octave's level, COMP */
+    /* PAD: a chord caught on a footswitch (px_pad_press) at sr / 8 into one of three 16-bit slices, played as
+     * overlapping grains; one slice fades in, one fades out, one records */
+    volatile uint32_t pad_press, pad_stop;            /* bumped by the UI and MIDI only (px_pad_press / px_pad_stop) */
+    uint32_t pad_seen_p, pad_seen_s;
+    int pad_k, pad_cap, pad_capr, pad_wait, pad_skip, pad_act;
+    float pad_g[3], pad_gt[3], pad_rk[3], pad_ka, pad_kr, pad_kf, pad_env, pad_slow, pad_mot, pad_mix;
+    int pad_attp;
+    float pad_gp[3][4], pad_gi[3][4], pad_gt0[3][4];  /* each slice's grains (PX_PAD_NG): start, step, phase */
+    px_bq pad_aa[2], pad_tone[2];
+    float pad_y0, pad_y1;
+    int dly_w, dly_type, dly_heads, rev_start, rev_cnt, dly_tick;
+#else
+    int16_t dly_buf[PX_DLY_N]; int dly_w, dly_type, dly_heads, rev_start, rev_cnt, dly_tick;
+#endif
+    float dly_xa, dly_y0, dly_y1, dly_dp;              /* the input kept for the tick, the last two outputs, the last tap */
     float dly_len, dly_tgt, dly_fb, dly_mix, dly_ph, dly_ph2, dly_inc, dly_inc2, dly_wow, dly_flut, dly_mod;
     float dly_sat, dly_satn, dly_q, dly_hn, dly_hf, rev_xf, dly_env, dly_rq;
     px_bq dly_lp, dly_hp;
@@ -182,11 +340,117 @@ typedef struct {
     float sp_z[6], sp_a;
     float sh_buf[PX_PS_N]; int sh_w; float sh_ph, sh_out, sh_lp, sh_k, rv_shim, sh_hp, sh_hk;
     px_bq rv_tone, rv_hp;
+    /* v38: changes without clicks. A knob's new values glide there over PX_GLIDE_TICKS blocks (gl_t: where to, gl_left:
+     * blocks to go); a block switched on or off fades in or out (bf: its gain now, bfa: at the start of this block, bfd:
+     * +1 / -1 while it fades). run: the preset the processing plays, cur with the blocks still fading out kept on. */
+    float gl_t[PX_GL_MAX]; int gl_left;
+    float bf[PX_NBLK], bfa[PX_NBLK]; int8_t bfd[PX_NBLK];
+    px_preset_t run;
+    uint32_t pf[PX_NBLK + 1];                          /* v38: time spent per block, [PX_NBLK] the NAM network (px_clock ticks) */
+    /* v39: the wet lanes (px_wet_mode below): lane 0 the delay, 1 the reverb, two buffers each (px_dsp.c: px_wl), used
+     * in turn. wl_b: the buffer the chain uses this block (it reads its wet out and writes its sends in); wl_n: how many
+     * samples a buffer holds, wl_w: 1 once they are wet; wl_rd: wet samples the chain may read this block, wl_p: where
+     * it is in the buffer; wl_dlag: the lag, in samples (the delay's taps read that much less far back) */
+    uint8_t wl_on, wl_b, wl_w[2][2];
+    uint16_t wl_n[2][2], wl_rd[2], wl_p[2];
+    float wl_dlag;
+    uint32_t wl_late, wl_pf[2];                        /* wet blocks cut short (out of time); wet time per lane (ticks) */
+    /* v40.2: the NAM network split between the cores by layers (px_nam_lp): its PX_PART_NAM queues the blocks, the other
+     * core finishes them (px_nam_lp_b), and PX_PART_POST applies the network's output gain and tone first; the other
+     * core's network time (ticks) */
+    uint8_t nam_lp;
+    uint32_t nam_pfb;
 } px_engine;
+int         px_nam_dual(const px_engine *e);          /* 1 = its NAM runs on two cores: process it on the job-giving core */
+int         px_nam_lp(px_engine *e, int on);          /* v40.2: the layer split on (if it can run) or off */
+int         px_nam_lp_b(px_engine *e);                /* v40.2: the other core's part of the oldest queued block */
 
 void px_engine_init(px_engine *e, float sr);
 void px_engine_set(px_engine *e, const px_preset_t *p);
+/* v38: changes without clicks.
+ * px_engine_change: what going from the engine's preset to p takes: PX_CH_NONE; PX_CH_KNOBS (settings and blocks on or
+ *   off only: px_engine_knobs, between two blocks, no stop); PX_CH_FULL (another type, order or NAM model: px_engine_set,
+ *   the caller fading the output out and back in round it).
+ * px_engine_knobs: the new settings glide in over ~23 ms, blocks switched on or off fade. Light (only the blocks whose
+ *   settings changed are recomputed), so the audio side can call it at the start of a block.
+ * px_engine_prepare: the heavy part of px_engine_knobs (the cabinet's normalisation) made ahead, from any thread: it reads
+ *   only p and writes only its own store, which px_engine_knobs then uses when it matches. */
+enum { PX_CH_NONE, PX_CH_KNOBS, PX_CH_FULL };
+int  px_engine_change(const px_engine *e, const px_preset_t *p);
+void px_engine_knobs(px_engine *e, const px_preset_t *p);
+void px_engine_prepare(const px_engine *e, const px_preset_t *p);
+#if PX_OWN_FX
+void px_pad_press(px_engine *e);   /* PAD: catch the chord being played (the left footswitch, MIDI CC 64: firmware/ui.h) */
+void px_pad_stop(px_engine *e);    /* PAD: fade it out over RELEASE (the left footswitch held 0.7 s) */
+/* test build 25: the expression pedal (MIDI CC 117: firmware/px_midi_io.h), 0..127; -1 forgets it (the engine then plays as
+ * if none had come). It moves what the preset has on: the WHAMMY, else an AUTO WAH, else a volume before the delay */
+void px_exp_set(int v);
+int  px_exp_info(void);            /* the position (-1: none) | its job << 8 (0 volume, 1 wah, 2 whammy, 3 another setting:
+                                    * test build 51) | the hold << 10 */
+/* test build 51: a two-job pedal (firmware/px_midi.h PXM_PL_DUAL): the block whose on/off picks the job, -1 none (the jobs as
+ * above). On, the pedal is that block's (a WAH's, AUTO WAH's or WHAMMY's own, else a setting the firmware moves: the volume
+ * stays at unity); off, the volume. A change of block forgets the position, as px_exp_set(-1) */
+void px_exp_dual(int b);
+/* test build 51: the volume's place, for every preset: 0 right after the input (after the GATE when it comes first: like the
+ * guitar's own volume knob), 1 before the first DELAY or REVERB (else the chain's end): the tone kept. The tails ring on in
+ * both */
+void px_exp_place(int at);
+#endif
 void px_engine_process(px_engine *e, const float *in, float *out, int n);
+enum { PX_PART_ALL, PX_PART_PRE, PX_PART_NAM, PX_PART_POST };   /* v37: px_engine_part's stages (see px_dsp.c) */
+void px_engine_part(px_engine *e, const float *in, float *out, int n, int part);
+extern int px_fx_int;                   /* v37: 1 = the cabinet and drive filters in integer arithmetic (off: slower) */
+extern int px_fx_hand;                  /* v37: their loop by hand (checked at start-up) */
+extern uint32_t (*px_clock)(void);      /* v38: set by the firmware: px_engine.pf counts each block's time */
+/* v39: wet lanes, as in the stock firmware (docs/STOCK-FIRMWARE.md 7.3). With them on, the DELAY and REVERB blocks no
+ * longer process in the chain: at their place the chain sends its signal to the lane and mixes in the lane's wet output
+ * of two blocks before (PX_WL_N frames a block); px_wet_run makes that wet output, on whichever core has time, outside
+ * the chain's own deadline. The delay's taps read wl_dlag samples less far back, so its echoes keep their time to the
+ * sample; the reverb starts lag samples later (5.8 ms at 2 x 128 frames).
+ *   px_wet_mode(e, on, lag): on or off (the lanes emptied); lag: the frames between a send and its wet output.
+ *   px_wet_swap(e): at each block boundary, nothing running: the buffers change roles.
+ *   px_wet_run(e, deadline, stop): makes the wet output of the other buffer's sends, 16 frames at a time. It stops
+ *     early (the rest of that block's wet is silence, wl_late counts it) once px_clock() passes deadline (0: none) or
+ *     *stop is set (0: none). Returns 1 when it got through. Off the chain's deadline: it may run on the other core
+ *     while the chain runs. */
+#define PX_WL_N 128
+void px_wet_mode(px_engine *e, int on, int lag);
+#if PX_OWN_FX
+/* test build 40: TAILS (px_dsp.c px_tl): a DELAY or REVERB that goes off rings out with what it had. on 0 stops any tail.
+ * (a tail ringing then fades out over 0.25 s). px_engine_ringing: bit 0 the delay rings, bit 1 the reverb (tests, the log) */
+void px_engine_tails(px_engine *e, int on);
+int  px_engine_ringing(const px_engine *e);
+/* test build 42: the output's two channels (firmware/px_audio.h; SETTINGS' OUTPUT, firmware/px_midi.h px_out_mode).
+ * LOW OCTAVE's octave leaves the chain at the PIT block and joins at its end, clean: no block after PIT touches it (amp,
+ * cabinet, EQ, MOD, DELAY, REVERB...); the preset's LEVEL, the volume pedal and the block's on/off fade still do.
+ * px_engine_out(e, mode, r) sets the next px_engine_part that makes output (PX_PART_ALL, PX_PART_POST): set it before each.
+ *  PX_OUT_MONO   out: everything, the octave added; r unused. As every earlier image.
+ *  PX_OUT_STEREO out: the left channel, r[0..n): the right. The mono sound in the middle; DELAY's and REVERB's wet (and their
+ *                TAILS) and seven MOD models also to the sides, as a side signal added to the left and taken from the right,
+ *                so that the two channels summed are the mono sound.
+ *  PX_OUT_BASS   out: the guitar without the octave, r[0..n): the octave alone (silence without LOW OCTAVE). */
+enum { PX_OUT_MONO, PX_OUT_STEREO, PX_OUT_BASS };
+void px_engine_out(px_engine *e, int mode, float *r);
+/* test build 43: USB RETURN, the computer's sound into the chain (firmware/px_uaudio.h; SETTINGS' USB RETURN and GUITAR).
+ * px_engine_ret(e, part, x, at, cut), before each px_engine_part (part as passed there: PRE and POST run at once on the two
+ * cores, each with its own): x[0..n) the computer's sound, mono, at the input's scale (0.5 its full scale), or 0 for none;
+ * at, where it joins the chain: right before block `at` (a PX_B_* index, where the preset's order puts that block, on or
+ * off), PX_RT_IN (the chain's start), PX_RT_END (after its last block, before the preset LEVEL), PX_RT_NONE (nowhere: the
+ * chain as in build 42); cut: from there on the guitar fades out (5.8 ms, and back in when cut is 0), so the chain goes on
+ * with the computer's sound alone (LOW OCTAVE's octave and STEREO's side made before that point go with the guitar) */
+enum { PX_RT_NONE = -1, PX_RT_IN = PX_NBLK, PX_RT_END };
+void px_engine_ret(px_engine *e, int part, const float *x, int at, int cut);
+#endif
+void px_wet_swap(px_engine *e);
+int  px_wet_run(px_engine *e, uint32_t deadline, volatile const uint8_t *stop);
+#if PX_LOOP_GUARD   /* test build 13, the Bluetooth audio image only (px_dsp.c PX_LOOP_CAP): the reverb's loop cut at
+                     * PX_MAX_BLOCK. [0] the cuts, [1] n as the loop reloaded it and [2] k, at the latest cut
+                     * (firmware/bt/bt_a2dp.c: the log's c1 line, W). Test build 14: the delay's loop cut too, and
+                     * px_wet_run's lane count and buffer index clamped; [3] which, at the latest (PX_WILD_*) */
+#define PX_LOOP_WILD_N 4
+enum { PX_WILD_REVERB = 1, PX_WILD_DELAY = 2, PX_WILD_LANE_N = 3, PX_WILD_LANE_B = 4 };
+extern uint32_t px_loop_wild[PX_LOOP_WILD_N];
+#endif
 
 #ifdef __cplusplus
 }

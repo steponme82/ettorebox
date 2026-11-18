@@ -1,8 +1,8 @@
-# OpenPocket — sounds and controls (v36)
+# OpenPocket — sounds and controls (v37)
 
 ![OpenPocket screens](ui-v23.png)
 
-## The chain (12 blocks, 77 models)
+## The chain (12 blocks, 79 models)
 Default order: `GT → CMP → PIT → SFX → SYN → DRV → AMP → CAB → EQ → MOD → DLY → REV`
 
 Since v29 every preset has its own block order: **double-click PUSH** on the chain to grab the selected block, turn
@@ -18,6 +18,12 @@ The names refer to the famous units the sounds are inspired by. Amps, drives and
 captures of the real units (v34); the effects follow published circuit analyses (ElectroSmash, Electric Druid,
 R.G. Keen, Boss/Roland/EHX manuals). They are digital models, not copies. The product names are trademarks of their
 owners, used only to describe the sound.
+
+### AMP — NAM: neural amp models (v37; MODEL, GAIN, BASS, MID, TREBLE)
+The ninth AMP type plays Neural Amp Modeler A2 networks: 12 factory models (TWIN, AC15, SUPER 59, SHIRL CL, JCM900,
+SHIRLEY, JCM2000, MARK IV, JVM OD2, PRO MOD, 5150, 6505 RED) and 16 user slots filled from the web editor with A2
+captures. MODEL picks the network, GAIN sets the level into it (±12 dB), BASS / MID / TREBLE are an EQ after it. The
+models have no cabinet: keep a CAB after the AMP. All the factory presets use NAM. Details: [NAM.md](NAM.md).
 
 ### AMP — 8 amps, fitted to captures of the real ones (GAIN, BASS, MID, TREBLE, PRESENCE)
 Since v34 there are fewer amps, and each one is fitted by computer to a capture of the real amp (method and
@@ -39,9 +45,12 @@ a "bright" cap that fades as the gain goes up, a tone stack, presence, resonance
 sag (asymmetric triode curve, bias shift that follows your playing, sag that reaches the preamp too). All 8 amps are
 level-matched (±0.1 dB).
 
-### CAB — 7 cabinets (BODY, BRIGHT, MIC)
+### CAB — 7 cabinets (BODY, BRIGHT, MIC) and USER IR (v38: IR, LOW CUT, HIGH CUT)
 1x12 US OPEN (Jensen C12N) · 2x12 BLUE (Alnico Blue) · 4x12 GREEN (Greenback) · 4x12 T75 · 4x12 V30 (Vintage 30,
-fitted to measurements since v34) · 1x12 CREAM · DI (NO CAB).
+fitted to measurements since v34) · 1x12 CREAM · DI (NO CAB) · USER IR.
+**USER IR** (v38) plays a cabinet impulse response loaded from the web editor (8 slots, a `.wav` file each): its first
+23 ms (1024 samples at 44.1 kHz), convolved exactly (partitioned FFT), at the same loudness as the other cabinets. IR
+picks the slot (its name shows on the PLAY page), LOW CUT 20..400 Hz, HIGH CUT 20 kHz..2 kHz.
 Speaker resonance, presence dips and peaks taken from the makers' curves (the V30 from 8 measured amp / amp + cab
 pairs). **MIC** moves the mic from the edge (dark) to the centre (bright).
 Each cabinet also has a detail layer: the cone's breakup resonances between 1.2 and 6 kHz, the comb filtering of an
@@ -106,8 +115,8 @@ plate). DECAY sets the real decay time (RT60) of the lows: ROOM 0.3–1.2 s, HAL
 PLATE 0.6–5 s, SPRING 1.5–4 s, SHIMMER 2–8 s, AMBIENT 6–20 s. They run at 22 kHz in 16 bits (like the classic
 studio units), in a quarter of v34's memory.
 
-## Factory presets (v36): 24 sounds, all at the same loudness, then 28 USER slots
-Built round the fitted amps and drives, which sound like their captures near noon. Every preset is levelled to the
+## Factory presets (v37): 24 sounds, all at the same loudness, then 28 USER slots
+Built round the NAM models (v37; v36's were built round the fitted amps) and the fitted drives. Every preset is levelled to the
 same loudness (-23 LUFS, EBU R128, measured on real DI guitar by `tools/level_presets.py`): going from a clean to a
 high-gain preset no longer jumps by 20 dB.
 
@@ -120,7 +129,7 @@ high-gain preset no longer jumps by 20 dB.
 | | 05 SURF SPRING | 11 70S ROCK | | 21 DOOM | |
 | | 06 AMBIENT SWELL | 12 BOUTIQUE | | | |
 
-25–52: **USER 25 … USER 52**, a clean TWIN + 1x12 + a little room, to build your own.
+25–52: **USER 25 … USER 52**, a clean NAM TWIN + 1x12 + a little room, to build your own.
 
 **Levels (v36)**: every amp plays at the same loudness at GAIN noon and moves only +-3 dB over the whole knob; every
 block type, with its knobs at noon, keeps the loudness when switched on; each preset has its own **PRESET LVL**
@@ -130,28 +139,58 @@ block type, with its knobs at noon, keeps the loudness when switched on; each pr
 ## Controls
 | Control | Action |
 |---|---|
-| KNOB (PARA) | PLAY: pick the block · EDIT page: pick the line · editing: change the value (turn fast = steps of 5) |
-| PUSH (knob) | PLAY → open the block's EDIT page · model/setting line → edit · ON/OFF → toggle · editing → confirm |
-| PUSH **double-click** (PLAY) | **MOVE** the selected block: knob = move it, PUSH = drop, HOME = put it back |
+| KNOB (PARA) | PLAY: pick the block · EDIT page: pick the line, in the order drawn (ON at the top, the model, the settings) · editing: change the value (turn fast = steps of 5; a list such as NAM MODEL or USER IR moves one filled entry per click) |
+| PUSH (knob) | PLAY → open the block's EDIT page at once · model/setting line → edit · ON/OFF → toggle · editing → confirm |
+| PUSH **double-click** (PLAY) | **MOVE** the selected block: knob = move it, PUSH = drop, HOME = put it back (the block's page shows for a moment between the clicks) |
 | PUSH **long press (0.8 s)** | **SAVE**: store the current sound (see below) |
-| HOME | back to PLAY · **long press (0.7 s) = tuner** |
-| Right / left footswitch | next / previous preset |
+| HOME | back to PLAY · on PLAY: the **preset list** (knob = browse by name, PUSH = load, HOME = back) · **long press (0.7 s) = tuner**, keep holding (1.4 s) = **diagnostics** |
+| Right / left footswitch | next / previous preset (on a block's EDIT page it also goes back to PLAY, where the preset shows). Coming back to a preset you edited without saving gives the edit back (one edit is kept) |
+| **Both footswitches** | **tuner** (the first one changes the preset at once, as always; the second within about 0.15 s changes it back and opens the tuner). Both again leave it |
 | AMP, CAB, DLY, REV, MOD | jump to the block; press again = on/off |
-| FX | steps through DRV → SFX → SYN → PIT → CMP → GT → EQ |
+| FX | the next of DRV, SFX, SYN, PIT, CMP, GT and EQ in the order of the preset's chain, as the tiles read · **long press (0.8 s)** = MIDI page |
 | MASTER | output volume |
 
 **Screen (v36)**: PLAY shows the preset number and name large, the amp and cab, the chain in colour (on = filled,
 off = dark) and the selected block; EDIT shows the block on its colour, the model, and up to 5 settings with value and
-bar. `C1 xx%` (top right on PLAY, bottom right on EDIT) = DSP load on the second core (`C0` = fallback on the main
-core, `BYP` = overload guard: turn a block off). `EDITED`: the sound differs from its saved slot.
+bar; the EDIT band also shows the preset number. `DSP xx%` (top right on PLAY, bottom right on EDIT) = DSP load (amber
+above 80 %; red with `!` = a block ran late; which cores ran is on the diagnostics page). **Overload guard**: the
+effects are bypassed until the next change, a red bar says `OVERLOAD: SOUND BYPASSED` (on EDIT the whole footer turns
+red) and the footer says `TURN A BLOCK OFF` (with `PEAK xxx%` on PLAY). While a NAM model loads, the MODEL row of the
+EDIT page reads `LOADING` in amber (on PLAY the corner does, and the amp name goes grey). Labels of blocks that are off
+are dimmer than those of blocks that are on. `EDITED`: the sound differs from its saved slot.
 Top centre of PLAY: the **battery** (v36), from the chip's own VBAT/4 channel (green, amber below 30 %, red below 15 %;
-`USB` when the 5 V supply is there); the tuner page shows the same reading in volts.
+`USB` when the 5 V supply is there); the diagnostics page shows the same reading in volts. On PLAY, the line under the
+tiles names a NAM amp's model and a user IR's name.
+
+## MIDI over USB-C (test build v37; [MIDI.md](MIDI.md))
+**Hold FX** for 0.8 s: the MIDI page (CHANNEL OMNI or 1 to 16, SEND, CLOCK > DELAY, USB AUDIO: [USB-AUDIO.md](USB-AUDIO.md)). Program Change 0 to 51 loads slot 1 to 52;
+Control Change sets the sound; the pedal sends Program Change and Control Change for what you do on it.
+
+| Block | On / off | Model | Setting 1 | 2 | 3 | 4 | 5 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| GATE | 20 | 52 | 33 | 34 | 35 | 36 | 37 |
+| COMP | 21 | 53 | 39 | 40 | 41 | 42 | 43 |
+| PITCH | 22 | 54 | 44 | 45 | 46 | 47 | 48 |
+| SFX | 23 | 55 | 49 | 50 | 51 | 70 | 71 |
+| DRIVE | 24 | 56 | 72 | 73 | 74 | 75 | 76 |
+| AMP | 25 | 57 | 77 | 78 | 79 | 80 | 81 |
+| CAB | 26 | 58 | 82 | 83 | 84 | 85 | 86 |
+| EQ | 27 | 59 | 87 | 88 | 89 | 90 | 91 |
+| MOD | 28 | 60 | 92 | 93 | 94 | 95 | 96 |
+| DELAY | 29 | 61 | 97 | 102 | 103 | 104 | 105 |
+| REVERB | 30 | 62 | 106 | 107 | 108 | 109 | 110 |
+| SYN | 31 | 63 | 111 | 112 | 113 | 114 | 115 |
+
+On / off: 64 and up is on. Settings 0 to 127 are 0 to 100. Model: the whole 0 to 127 range is divided between the block's models.
+CC 7 is the MASTER volume. Details, the clock sync and the limits: [MIDI.md](MIDI.md).
 
 ## Saving your sounds (v25)
-- `EDITED` at the top of the PLAY screen means the sound has been edited since the preset was loaded.
+- `EDITED` at the top of the PLAY screen means the sound has been edited since the preset was loaded; the footer then reads `HOLD: SAVE`.
 - **Long press on PUSH**: SAVE page. The knob picks the slot (1 to 52; the current preset is offered first; the
   screen shows the name of the sound that will be replaced), PUSH saves, HOME cancels.
-- At the very end of the list: **RESTORE FACTORY** puts the current slot back to its factory preset.
+- At the very end of the list: **RESTORE FACTORY** puts the current slot back to its factory preset (the footer reads
+  `PUSH: RESTORE`; on a slot that already holds its factory sound, PUSH does nothing).
+- A sound saved to another slot keeps its name: rename it in the web editor.
 - The pedal starts on the slot saved last.
 - Sounds are kept in flash (0xF0000–0xF4000, two copies): a power cut during a save leaves the previous version,
   never a damaged slot. They **survive OpenPocket updates** (the update loader only writes the app area). The sound
@@ -159,8 +198,23 @@ Top centre of PLAY: the **battery** (v36), from the chip's own VBAT/4 channel (g
   the first start of v29 (the SYN block off, the default order).
 
 ## Tuner
-Long press on HOME. The output is muted while the tuner is open (v36). The `IN L … R … dB` line at the top shows the level of each input channel (dB below full
-scale): with nothing plugged in, it is the pedal's own noise floor; while playing, it is your guitar's level.
+Both footswitches, or a long press on HOME. The output is muted while the tuner is open (v36). The note, how far off it
+is in cents, and an amber arrow on the side of the note that points toward in tune. Any switch leaves it.
+
+## Diagnostics
+Keep holding HOME past the tuner (1.4 s in all), or hold HOME again on the tuner. The pages bug reports ask for a photo of
+(the tuner page showed these before); the knob turns between them, any control leaves, and the sound plays. Every figure is
+written beside its picture. Green is fine, amber is above 80 %, red is a late block or the effects bypassed.
+
+- **Page 1, the DSP:** the load as a bar with the safety bypass's limit marked (`GUARD 93%` with both cores, 85 % on one)
+  and the peak since the preset was set; which cores ran (`C1` the second core, `C0` the fallback on the main core, `2C`
+  both) and `PK`, the highest block load since boot; a bar for each core while the NAM network is split between them;
+  `LATE` (blocks that ran late), `CLIP` (blocks at the soft clipper) and `BYPASS`; the four costliest blocks as bars, the
+  heaviest in amber, and `CUT n` once the delay or the reverb had to cut a wet block short.
+- **Page 2, input and power:** a meter for each input channel (`L -62 DB`, dB below full scale; with nothing plugged in,
+  the pedal's own noise floor), with the last 3 dB marked as the clip zone; a marker that lights for 2 s when the output
+  reaches the soft clipper, with the count; the battery as a cell with its volts and percent (`USB` on the 5 V supply);
+  the raw battery readings (`C9`, `CH`).
 
 ## Audio input (v26–v28)
 Like the official firmware: input and output in 24 bits (v26), and the guitar read from the left channel only (v28).
@@ -183,7 +237,7 @@ high-gain amps turned it into a constant hiss, even with nothing plugged in.
   over v24 (BYP guard at 85 %).
 
 ## USB update (v24)
-Over USB the pedal shows up as a MIDI device named "OpenPocket". The installer page (`docs/index.html`, published
+Over USB the pedal shows up as a MIDI device named "OpenPocket" (and, with the USB AUDIO setting on, a sound card: [USB-AUDIO.md](USB-AUDIO.md)). The installer page (`docs/index.html`, published
 on GitHub Pages) recognises it, installs a new version or takes the pedal back to the official firmware. During an
 update the screen shows `UPDATE` and the current step; if it fails, `FAILED -N`, then the pedal restarts on the
 previous version (nothing is written before the pedal has checked the package).

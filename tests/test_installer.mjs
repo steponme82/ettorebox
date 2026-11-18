@@ -4,16 +4,16 @@
 // (step 2), on a 1 MiB flash. No browser, no hardware.
 //   cc -O1 -o build/devsim tests/devsim.c && node tests/test_installer.mjs [PocketX_016.fwsc]
 // The optional official package checks the way back's step 1 (the official loader staged by OpenPocket's ota.c).
-import { spawn, execFileSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Updater, IS_OPENPOCKET } from "../docs/pxota.js";
 import { productOf, logicalImage, checkOfficial } from "../docs/pxpkg.js";
+import { simAccess } from "./simpedal.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const SIM = process.env.DEVSIM || join(ROOT, "build", "devsim");
 const TMP = mkdtempSync(join(tmpdir(), "opinst-"));
 let failed = 0;
 const ok = (c, what) => { console.log(`${what.padEnd(70)} ${c ? "ok" : "FAIL"}`); if (!c) failed++; };
@@ -21,40 +21,6 @@ const FAST = { afterUpgrade: 50, afterStep1: 50, loaderWait: 5000, step1Idle: 30
   backWait: 5000, perRequest: 0, poll: 50 };
 
 execFileSync("python3", [join(ROOT, "tests", "fixtures.py"), TMP], { stdio: "inherit" });
-
-// a fake WebMIDI access over one simulated pedal: its port pair is renamed when the device re-enumerates
-function simAccess(args) {
-  const child = spawn(SIM, args, { stdio: ["pipe", "pipe", "inherit"] });
-  const log = [];
-  const access = { inputs: new Map(), outputs: new Map() };
-  let port = null, buf = "", readyFn;
-  const ready = new Promise((r) => { readyFn = r; });
-  const mkPorts = (name) => {
-    if (port) { port.input.state = "disconnected"; port.output.state = "disconnected"; }
-    access.inputs.clear(); access.outputs.clear();
-    if (name === "none") { port = null; return; }
-    const input = { name, state: "connected", onmidimessage: null, open: async () => {} };
-    const output = { name, state: "connected", open: async () => {},
-      send: (bytes) => {
-        if (output.state === "disconnected") throw new Error("disconnected");
-        child.stdin.write(Buffer.from(bytes).toString("hex") + "\n");
-      } };
-    port = { input, output };
-    access.inputs.set(name, input); access.outputs.set(name, output);
-  };
-  child.stdout.on("data", (d) => {
-    buf += d.toString();
-    let i;
-    while ((i = buf.indexOf("\n")) >= 0) {
-      const ln = buf.slice(0, i); buf = buf.slice(i + 1);
-      if (ln.startsWith("#port ")) { mkPorts(ln.slice(6)); readyFn(); }
-      else if (ln.startsWith("#log ")) log.push(ln.slice(5));
-      else if (port && port.input.onmidimessage && ln) port.input.onmidimessage({ data: Uint8Array.from(Buffer.from(ln, "hex")) });
-    }
-  });
-  const done = new Promise((r) => child.on("exit", (code) => r(code)));
-  return { access, log, ready, end: async () => { child.stdin.end(); return done; } };
-}
 
 const pkg = (name) => readFileSync(join(TMP, name));
 const flashOf = (f) => readFileSync(f);
@@ -78,10 +44,11 @@ ok(productOf(px) === "PocketX_924" && productOf(bb) === "BlackBox_924", "package
   const dump = join(TMP, "after_update.bin");
   const sim = simAccess([join(TMP, "flash_old.bin"), "--dump", dump]);
   await sim.ready;
+  [...sim.access.outputs.values()][0].send([0xF0, 0x7E, 0x7F, 0x09, 0x01, 0xF7]);   // a DAW's General MIDI reset: not ours
   const u = new Updater(sim.access, null, FAST);
   const steps = [];
   const who = await u.identify();
-  ok(who && who.id.text === "PocketX_923" && IS_OPENPOCKET(who.id), "the pedal reports the OpenPocket it runs (PocketX_923)");
+  ok(who && who.id.text === "PocketX_923" && IS_OPENPOCKET(who.id), "a foreign SysEx is dropped; the pedal reports the OpenPocket it runs (PocketX_923)");
   let res = null, err = null;
   try { res = await u.install(logicalImage(px), "PocketX_924", (s) => steps.push(s)); } catch (e) { err = e; }
   ok(!err && res === "PocketX_924", `update 923 -> 924 ${err ? "(" + err.code + " " + err.message + ")" : ""}`);
@@ -119,6 +86,40 @@ ok(productOf(px) === "PocketX_924" && productOf(bb) === "BlackBox_924", "package
   try { res = await u.install(logicalImage(px), "PocketX_924", () => {}); } catch (e) { err = e; }
   ok(!err && res === "PocketX_924", `official PocketX_016 -> OpenPocket 924 ${err ? "(" + err.code + ")" : ""}`);
   await sim.end();
+}
+
+// 4b. M-VAVE's BlackBox V22 and later (their flash head puts the app area at 0x6000, the boot loader running to 0x5CA0):
+//     OpenPocket's loader writes from 0x4000 and would overwrite that boot loader (isod89/openpocket#31, #33)
+{   // the page refuses a pedal that says it runs BlackBox_022 before sending anything
+  const dump = join(TMP, "v22_page.bin");
+  const sim = simAccess([join(TMP, "flash_v22.bin"), "--stock", "BlackBox_022", "--dump", dump]);
+  await sim.ready;
+  const u = new Updater(sim.access, null, FAST);
+  const steps = [];
+  let err = null;
+  try { await u.install(logicalImage(bb), "BlackBox_924", (s) => steps.push(s)); } catch (e) { err = e; }
+  await sim.end();
+  ok(err && err.code === "layout" && err.detail === "BlackBox_022" && !steps.length && !sim.log.some((l) => /step1/.test(l)) &&
+     flashOf(dump).equals(flashOf(join(TMP, "flash_v22.bin"))), "official BlackBox_022: refused by the page, nothing sent, nothing written");
+}
+{   // the loader refuses the V22 head itself, whatever the pedal says (here 021): nothing written, the record gone, the pedal
+    // back on its own firmware, the page told at once (not after the write's 3-minute wait)
+  const dump = join(TMP, "v22_loader.bin");
+  const sim = simAccess([join(TMP, "flash_v22.bin"), "--stock", "BlackBox_021", "--dump", dump]);
+  await sim.ready;
+  const u = new Updater(sim.access, null, { ...FAST, step2Idle: 30000 });
+  const t0 = Date.now();
+  let err = null;
+  try { await u.install(logicalImage(bb), "BlackBox_924", () => {}); } catch (e) { err = e; }
+  const took = Date.now() - t0;
+  await new Promise((r) => setTimeout(r, 200));
+  await sim.end();
+  const before = flashOf(join(TMP, "flash_v22.bin")), after = flashOf(dump);
+  ok(err && err.code === "layout" && /past 0x4000|not at 0x4000/.test(err.detail) && took < 10000 && sim.log.some((l) => /step2 rc=-6[1-5]/.test(l)),
+     `a V22 head behind an older identity: the loader refuses it (${err ? err.detail : "no error"}), the page told in ${took} ms`);
+  ok(after.subarray(0, 0xA3000).equals(before.subarray(0, 0xA3000)), "V22 head refused: the head and [0x4000, 0xA3000) untouched");
+  ok(after.subarray(0xE4000, 0xE5000).every((b) => b === 0xFF) && sim.log.some((l) => /app BlackBox_021 refused record=none/.test(l)),
+     "V22 head refused: the update record erased, the pedal restarts on its own firmware");
 }
 
 // 5. a damaged package: the loader refuses it before erasing anything

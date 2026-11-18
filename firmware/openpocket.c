@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * OpenPocket X — Milestone 1 (boot + screen) — Donner Pocket X.
  * SCREEN (reverse-engineered from the stock firmware): SOFTWARE SPI on PORT B
- *   CS = PB1, D/C = PB5, CLK = PB6, DO = PB7   (+ PC7 driven, reset/backlight?)
+ *   CS = PB1, D/C = PB5, CLK = PB6, DO = PB7   (PC7 is not the screen's: the button lights' enable, px_leds.h)
  * (the FM-1 used port C: that was the cause of the black screen.)
  * Init sequence + 40-line offset: taken verbatim from the Pocket X firmware.
  * Safety net: 2 failed boots -> UBOOT (re-flashable), + backup fm1-1.bin.
@@ -17,11 +17,28 @@
 #define DSP_CPU1 0
 #endif
 #define FELUCCA_ID "FM-1_900"
+/* the Bluetooth audio test build (docs/BT-AUDIO-TEST.md): its boot text and its id for the second core's bar (app_main) */
+#define BT_TEST_BUILD 51
+#define BT_STR_(x) #x
+#define BT_STR(x) BT_STR_(x)
+#define BT_TEST_BUILD_TEXT BT_STR(BT_TEST_BUILD)
 #include "fm1_time.h"
 #include "fm1_sys.h"
 #include "fm1_irq.h"
 #include "fm1_guard.h"
 #if DSP_CPU1
+#if OP_BT_AUDIO
+#define FM1_CPU1_RECORD 1  /* the second core's fault record in full (the Bluetooth audio image's c1 line, bt/bt_a2dp.c) */
+#define FM1_CPU1_ECHO 1    /* test build 14: CPU0's exceptions that are CPU1's fault echoed, or the late flag of holding it,
+                            * recognised and counted (fm1_cpu1.h fm1_cpu1_echo) */
+#define FM1_CPU1_ECHO_MAX 0u /* test build 15: none resumed (CPU0's crash, as up to build 13). Build 14 resumed up to 4: on
+                            * the pedal the boots it resumed hung until the watchdog, the others did not */
+#define FM1_CPU1_OWN_RAM 1 /* test build 14: its mailbox in a section of its own, out of the radio's window with its stacks
+                            * (bt/app-bt.ld) */
+#endif
+#if OP_BLE_TEST
+#define FM1_CPU1_NOBAR 1   /* the stall watch's own crash bars no core (px_usb.h fm1_timer5_irq) */
+#endif
 #include "fm1_cpu1.h"
 #endif
 #include "font8x8.h"
@@ -43,7 +60,8 @@
 enum { RED=0xF800, GRN=0x07E0, BLU=0x001F, WHT=0xFFFF, BLK=0x0000, CYN=0x07FF, YEL=0xFFE0, ORG=0xFD20 };
 
 extern uint32_t _data_start[], _data_end[], _data_load[], _bss_start[], _bss_end[];
-extern uint32_t _rt_start[], _rt_end[], _rt_load[];
+extern uint32_t _rt_start[], _rt_end[], _rt_load[], _bss_hi_start[], _bss_hi_end[], _pool_tail_start[], _pool_tail_end[],
+                _bss_lo_start[], _bss_lo_end[];
 static volatile struct { uint32_t magic, pending, failed; } guard __attribute__((section(".noinit")));
 
 static uint32_t ms_now(void) { return (uint32_t)(fm1_ticks() / (FM1_TICKS_PER_US * 1000u)); }
@@ -144,7 +162,7 @@ static void lcd_init(void)
     PB_DIR &= ~(CS | DC | CLK | DO);   /* outputs */
     PC_DIR &= ~PC7;
     PB_OUT |= CS; PB_OUT &= ~CLK;      /* CS high, CLK low */
-    PC_OUT |= PC7;                     /* PC7 high (reset released / backlight?) */
+    PC_OUT |= PC7;                     /* PC7 high: the button lights off (their enable, low = on: px_leds.h) */
 #if LCD_HW
     lspi_init();
 #endif
@@ -159,14 +177,28 @@ static void lcd_init(void)
 }
 /* DMA pixel buffers (2: fill one while the other is being sent) */
 #define LBUF_PX 1024u
+#if OP_BT_AUDIO
+static void bt_yield(void);     /* (bt/bt_a2dp.c, test build 24: the music's queue decoded while the screen draws) */
+static volatile uint8_t lcd_yield_off;   /* (test build 26: the crash screen, fm1_fault: the decoder may be where it stopped) */
+#define LCD_YIELD() do { if (!lcd_yield_off) bt_yield(); } while (0)
+#else
+#define LCD_YIELD() ((void)0)
+#endif
 #if LCD_HW
 static uint8_t lbuf[2][LBUF_PX * 2u] __attribute__((aligned(4)));
 static uint32_t lb_i;
 #endif
 static uint32_t lb_n;
+#if PX_OWN_FX
+static uint32_t lcd_gen;   /* test build 51: bumped by every drawing (ui.h's line at the right edge is drawn again after it) */
+#define LCD_GEN() (lcd_gen++)
+#else
+#define LCD_GEN() ((void)0)
+#endif
 /* filled rectangle (16-bit coords + 40-line offset) */
 static void lcd_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t rgb)
 {
+    LCD_GEN();
     if (w == 0u || h == 0u || x >= 240u || y >= 240u) return;   /* v23: a negative size (huge unsigned) used to */
     if (x + w > 240u) w = 240u - x;                            /* stream 4 billion pixels = black screen forever */
     if (y + h > 240u) h = 240u - y;
@@ -185,6 +217,7 @@ static void lcd_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t rg
             lspi_dma(b, n * 2u);
             px -= n;
             fm1_wdt_feed();
+            LCD_YIELD();
         }
         lspi_wait();
     }
@@ -206,6 +239,7 @@ enum { UI_BG=0x0841, UI_PANEL=0x18E3, UI_SEL=0xFB00, UI_ACC=0xFD20,
 /* write window + pixel stream (CS stays low between pixels) */
 static void lcd_win(uint32_t x, uint32_t y, uint32_t w, uint32_t h)
 {
+    LCD_GEN();
     uint8_t a[4]; uint32_t yo=y+PX_ROW_OFFSET, x1=x+w-1u, y1=yo+h-1u;
     a[0]=(uint8_t)(x>>8);a[1]=(uint8_t)x;a[2]=(uint8_t)(x1>>8);a[3]=(uint8_t)x1; lcd_cmd(0x2A,a,4);
     a[0]=(uint8_t)(yo>>8);a[1]=(uint8_t)yo;a[2]=(uint8_t)(y1>>8);a[3]=(uint8_t)y1; lcd_cmd(0x2B,a,4);
@@ -218,6 +252,7 @@ static void lb_flush(void)
     if (!lb_n) return;
     lspi_dma(lbuf[lb_i], lb_n * 2u);    /* waits for the previous transfer (the other buffer), then starts this one */
     lb_i ^= 1u; lb_n = 0;
+    LCD_YIELD();                        /* (while this buffer goes out) */
 }
 static inline void lcd_px(uint16_t c)
 {
@@ -253,11 +288,22 @@ static void lcd_text(uint32_t x, uint32_t y, const char *str, uint16_t fg, uint1
 }
 /* ---- preset: the v2 engine's struct (engine/px_dsp.h), edited directly by the UI ---- */
 #include "px_dsp.h"
+#include "px_nam.h"           /* v37: NAM A2-Lite (the engine includes px_nam.c) */
+#if PX_OWN_FX   /* test build 51: px_midi.h tells the engine the two-job pedal's block and SETTINGS' VOL PEDAL */
+#define PX_EXP_DUAL(b) px_exp_dual((int)(b))
+#define PX_EXP_PLACE(at) px_exp_place((int)(at))
+#endif
+#include "px_midi.h"                    /* MIDI map and settings (docs/MIDI.md) */
 static px_preset_t PRESET;
 static uint32_t cur_preset = 0;
 static uint32_t master_vol = 80;        /* 0..100, follows the MASTER knob (ADC channel 2) */
 static void st_get(uint32_t k, px_preset_t *p);   /* px_store.h: the saved preset of slot k, else the factory one */
-static void load_preset(uint32_t i) { st_get(i, &PRESET); }
+static uint8_t preset_new;                             /* v40.3: a preset was loaded: the sound follows at once */
+#if PX_OWN_FX
+static void load_preset(uint32_t i) { st_get(i, &PRESET); preset_new = 1; PX_SC_LOAD(i); }   /* (test build 49: its scenes) */
+#else
+static void load_preset(uint32_t i) { st_get(i, &PRESET); preset_new = 1; }
+#endif
 
 #if AUDIO_PROBE
 void fm1_timer5_irq(void) { }
@@ -268,9 +314,22 @@ void op_audio_irq(void) { }           /* internal DAC: not used by the Pocket X 
 /* readable crash screen: vector, PC, return address, bus error register — then reboot */
 static void hex8(char *b, uint32_t v){ static const char H[]="0123456789ABCDEF";
     for (int i=0;i<8;i++) b[i]=H[(v>>(28-4*i))&15u]; b[8]=0; }
+#if OP_BT_AUDIO && DSP_CPU1
+/* test build 14: the second core's fault record as it stood at CPU0's own crash (its count, which core took it, when, the
+ * PC), for the next boot's LAST START FAILED and the log's last-boot line: in test build 13 CPU0 crashed at the very ms CPU1
+ * faulted, and the record went with the RAM. crash: the fm1_crash.count it belongs to */
+struct { uint32_t crash, count, cpu, ms, pc; } op_c1x __attribute__((section(".noinit")));
+#endif
 static void fm1_fault(const fm1_crash_t *c)
 {
     char h[9];
+#if OP_BT_AUDIO
+    lcd_yield_off = 1;                  /* (the screen below must not run the music's decoder: test build 26) */
+#endif
+#if OP_BT_AUDIO && DSP_CPU1
+    op_c1x.crash = c->count; op_c1x.count = fm1_cpu1_fault.count; op_c1x.cpu = fm1_cpu1_fault.cpu;
+    op_c1x.ms = fm1_cpu1_fault.ms; op_c1x.pc = fm1_cpu1_fault.pc;
+#endif
     lcd_rect(0,0,240,240,RED);
     lcd_text(8,8,"CRASH",WHT,RED,2);
     lcd_text(8,40,"VEC",WHT,RED,1); hex8(h,c->vec);  lcd_text(64,40,h,WHT,RED,1);
@@ -296,16 +355,26 @@ static void fm1_fault(const fm1_crash_t *c)
 #define PC_DIR  (*(volatile uint32_t *)0x50088u)
 #define PC_DIE  (*(volatile uint32_t *)0x5008Cu)
 #define PC_PU   (*(volatile uint32_t *)0x50090u)
+#define PC_PD   (*(volatile uint32_t *)0x50094u)
 /* port H (index 7): declared by Felucca and read by the stock firmware. NO port D on this chip. */
 #define PH_IN   (*(volatile uint32_t *)0x501C4u)
 #define PH_DIE  (*(volatile uint32_t *)0x501CCu)
 #define PH_PU   (*(volatile uint32_t *)0x501D0u)
 #define PH_DIR  (*(volatile uint32_t *)0x501C8u)
 #define ENC_MASK 0x3u      /* PC0=A, PC1=B */
-#define OP_VERSION_NUM "36"
-#define OP_VERSION "v" OP_VERSION_NUM   /* shown at boot: changes with every released build */
+#ifndef OP_VERSION_NUM                  /* a test channel build (firmware/build.sh, OP_CHANNEL) sets its own number and tag */
+#define OP_VERSION_NUM "42"
+#endif
+#ifndef OP_TAG
+#define OP_TAG ""
+#endif
+#ifndef OP_GUARD_STACK      /* hardware stack-limit guard (fm1_guard.h). build.sh turns it off for the Bluetooth test image, */
+#define OP_GUARD_STACK 1    /* whose task stacks (ble_os.c) lie outside [_ustack_lo, _sstack_top]; app.ld checks this at link time */
+#endif
+#define OP_VERSION "v" OP_VERSION_NUM OP_TAG   /* shown at boot: changes with every released build */
 #define PROBE 0            /* 1 = GPIO diagnostic: shows the pins that change at the bottom */
 #define ADC_PROBE 0        /* 1 = ADC diagnostic: shows the channels that move at the bottom (C2:512) */
+#define LED_PROBE 0        /* 1 = LED map (issue #8, led_probe.h): the knob picks a bit of the lights' 595, it blinks; no sound */
 #define PA_PD   (*(volatile uint32_t *)0x50014u)
 
 /* ---- Controls mapped on the real pedal (diagnostic) ----
@@ -335,7 +404,8 @@ static void input_init(void)
     PH_DIE |= 0xFFFFu; PH_PU |= 0xFFFFu;
     PB_DIE |= 0xFF1Du; PB_PU |= 0xFF1Du;                       /* except PB1/5/6/7 (screen) */
 #endif
-    PC_DIR &= ~PC7; PC_OUT |= PC7;      /* PC7 drives the screen: always an output at 1 */
+    PC_DIR &= ~PC7; PC_OUT |= PC7;      /* PC7, the button lights' enable: high = off until px_leds.h turns them on */
+    PC_DIR |= 1u << 9; PC_DIE &= ~(1u << 9); PC_PU &= ~(1u << 9); PC_PD &= ~(1u << 9);   /* PC9: the battery divider (analog) */
 }
 static void input_baseline(void)
 {
@@ -397,44 +467,29 @@ static int32_t adc_read2(uint32_t ch)
     return fm1_adc_read(ch);
 }
 
-/* ---- battery (v36): the chip's own VBAT / 4 channel through the PMU test bus, scaled by the 0.8 V bandgap
- * read the same way (JieLi AC79 SDK, cpu/wl82/key/adc_api.c): mV = 4 x 800 x vbat / vbg. P3_ANA_CON4: bit 0
- * PMU_DET_EN, bits 3:1 the PMU channel (0 VBG, 5 VBAT/4, 6 LDO5V/4); WLA_CON0 bits 17:15 = 4: the PMU on the ADC's
- * channel 15, bit 14: the bandgap path. Everything is put back as it was after each reading. */
-#define P3_ANA_CON4 0x04u
-static int bat_mv, bat_usb_mv;         /* last readings (0: none) */
-static int32_t pmu_conv(uint32_t sel)
-{
-    uint32_t t, v = 0;
-    for (int k = 0; k < 3; k++) {                       /* 2 conversions to settle the mux, the 3rd counts */
-        FM1_ADC_CON_R = 0;
-        if (sel == 0u) FM1_WLA_CON0 |= 1u << 14; else FM1_WLA_CON0 &= ~(1u << 14);
-        FM1_ADC_CON_R = (FM1_ADC_CON_SDK & 0xF00Fu) | 0x40u | (15u << 8);
-        FM1_ADC_CON_R |= 0x10u;
-        FM1_ADC_CON_R |= 0x40u;
-        for (t = 0; t < 20000u && !fm1_adc_done(); t++) ;
-        if (t == 20000u) { fm1_adc_abort(); return -1; }
-        v = fm1_adc_take();
-    }
-    return (int32_t)v;
-}
+/* ---- battery (v37): as the stock firmware reads it. On the Pocket X the chip's own VBAT pin is a regulated 3.3 V (it
+ * reads 3.31 V charged or not, on USB or not: v36 read it, so the gauge never moved) and its 5 V input is not the USB's.
+ * The cell is on PC9 (ADC channel 8) through a 1:2 divider: PocketX_016 (f_02026f60, adc_get_value(8) = f_02025682;
+ * BlackBox the same) maps raw 528 and below to 0 %, 636 and above to 100 %, (raw x 100 - 52700) / 109 between, on an
+ * average of 300 readings. PC9 is an analog input (input_init). Only the ADC: nothing analog is switched (the PMU test bus
+ * readings of the first v37 builds are gone). */
+static int bat_mv, bat_usb_mv;         /* last readings (0: none); bat_usb_mv stays 0 (no USB sense found yet) */
+static int32_t bat_raw[5] = {-1, -1, -1, -1, -1};   /* the tuner page's raw line: PC9, 0x16A10 bit 16, overruns, clips, peak */
+static int bat_pct = -1;               /* the gauge (-1: no reading) */
+static int32_t bat_c9q;                /* PC9 smoothed, x4 */
 static void bat_read(void)
 {
-    uint8_t c4 = fm1_p33_read(P3_ANA_CON4);
-    uint32_t w = FM1_WLA_CON0;
-    FM1_WLA_CON0 = (w & ~(7u << 15)) | (4u << 15);
-    fm1_p33_write(P3_ANA_CON4, (uint8_t)((c4 & 0xF0u) | 1u | (0u << 1)));
-    int32_t vbg = pmu_conv(0u);
-    fm1_p33_write(P3_ANA_CON4, (uint8_t)((c4 & 0xF0u) | 1u | (5u << 1)));
-    int32_t vb = pmu_conv(5u);
-    fm1_p33_write(P3_ANA_CON4, (uint8_t)((c4 & 0xF0u) | 1u | (6u << 1)));
-    int32_t v5 = pmu_conv(6u);
-    fm1_p33_write(P3_ANA_CON4, c4);
-    FM1_WLA_CON0 = w;
-    if (vbg < 100 || vbg > 900 || vb < 0) { bat_mv = 0; return; }
-    int mv = (int)(3200 * vb / vbg), mu = v5 < 0 ? 0 : (int)(3200 * v5 / vbg);
-    bat_mv = bat_mv ? (bat_mv * 3 + mv) / 4 : mv;      /* a little smoothing */
-    bat_usb_mv = mu;
+    int32_t c9 = 0, n = 0;
+    (void)fm1_adc_read(8u);                             /* (the sampling capacitor still holds the last channel) */
+    for (int k = 0; k < 8; k++) { int32_t v = fm1_adc_read(8u); if (v >= 0) { c9 += v; n++; } }
+    c9 = n ? c9 / n : -1;
+    bat_raw[0] = c9;
+    bat_raw[1] = (int32_t)((*(volatile uint32_t *)0x16A10u >> 16) & 1u);   /* (stock reads it beside the gauge: charging?) */
+    if (c9 < 100) { bat_mv = 0; bat_pct = -1; bat_c9q = 0; return; }   /* no divider there: no gauge */
+    bat_c9q = bat_c9q ? (bat_c9q * 3 + c9 * 4) / 4 : c9 * 4;   /* a little smoothing */
+    int r = (int)(bat_c9q / 4);
+    bat_pct = r > 635 ? 100 : r < 528 ? 0 : (r * 100 - 52700) / 109;
+    bat_mv = r * 6600 / 1023;                           /* the cell, roughly (3.3 V reference, 1:2): for the tuner page */
 }
 #define KEY_DEBUG 0          /* 1 = shows the raw value of channel 9 at the bottom right (K####) */
 /* identifies the analog keypad button by the nearest value (±42 window),
@@ -447,6 +502,13 @@ static int keys_decode(int32_t v)
     for (int i = 0; i < 3; i++) { int32_t e = v - REF[i]; if (e < 0) e = -e; if (e < bd) { bd = e; best = i; } }
     return (bd <= 42) ? best + 1 : KEY_NONE;
 }
+#if OP_BT_AUDIO
+static int keys_held_at_boot;           /* the analog button held while the pedal started: 1 CAB, 2 DLY, 3 REV, 0 none */
+/* test build 28: the key that turns the central role off for a boot (no scanning for the footswitch, LE as in test build 27),
+ * and the one that leaves out the rest of the stock power setup (up to test build 27: DLY; 0: none, the setup always done) */
+#define BT_CEN_OFF_KEY 2                /* DLY */
+#define BT_PWR_KEY 0
+#endif
 static void keys_capture_idle(void)
 {
     fm1_delay_ms(20);
@@ -455,7 +517,11 @@ static void keys_capture_idle(void)
     static const int32_t REF[3] = { 617, 706, 788 };
     for (int i = 0; i < 3 && keys_idle >= 0; i++) {
         int32_t e = keys_idle - REF[i]; if (e < 0) e = -e;
+#if OP_BT_AUDIO
+        if (e <= 45) { keys_idle = 1023; keys_held_at_boot = i + 1; break; }   /* (the Bluetooth audio image's boot keys) */
+#else
         if (e <= 45) { keys_idle = 1023; break; }
+#endif
     }
 }
 #if ADC_PROBE
@@ -531,18 +597,170 @@ static const int8_t QDEC[16] = {0,-1,1,0, 1,0,0,-1, -1,0,0,1, 0,1,-1,0};
 #if AUDIO_PROBE
 #include "audio_probe.h"
 #else
+#include "px_cacheram.h"     /* v37: data-cache ways as RAM (melodee's routine): the NAM network's vector-unit buffers */
 #include "px_audio.h"
 #endif
 
 #if !AUDIO_PROBE
+#if PX_OWN_FX   /* SYN PAD (the Bluetooth audio image's own effect): the chord caught and let go on the engine, from ui.h's left
+                 * footswitch and px_midi_io.h's CC 64 (the main loop: px_dsp.c only reads the two counters) */
+#define PX_PAD_PRESS() px_pad_press(&g_eng)
+#define PX_PAD_STOP() px_pad_stop(&g_eng)
+#define PX_EXP_SET(v) px_exp_set((int)(v))   /* test build 25: px_midi_io.h's CC 117, the expression pedal */
+#endif
+#if OP_BT_AUDIO     /* test build 26: ui.h's waits on a message ("SAVED", 0.7 s) serve the radio, as the main loop does */
+void ble_test_poll(void);
+#define UI_IDLE() ble_test_poll()
+#define UI_MS() ms_now()
+static void bt_power_apply(void);   /* test build 40: SETTINGS' BT POWER, applied by the Bluetooth task (bt/bt_a2dp.c) */
+#define PX_BT_POWER_APPLY() bt_power_apply()
+static void px_uh_apply(void);      /* test build 41: SETTINGS' USB PORT, COMPUTER / FOOTSW, to the port (px_usb.h) */
+static uint32_t px_uh_note(void);   /* test build 41: the USB footswitch's note on PLAY's footer (px_usb.h, px_usbhost.h) */
+#define PX_USB_MODE_APPLY() px_uh_apply()
+#define PX_UI_NOTE() px_uh_note()
+#endif
 #include "ui.h"
+#include "px_lights.h"      /* the button lights follow the blocks (issue #8; px_leds.h drives them) */
+#define PX_LIGHTS_OFF() lights_off()
 #include "px_usb.h"         /* USB-MIDI + update entry (web installer) */
 #include "px_store.h"       /* the user's presets in flash */
+#include "px_models.h"      /* v37: the NAM user models in flash */
+#include "px_irs.h"         /* v38: the user cabinet IRs in flash */
 #if !AUDIO_PROBE
 static uint32_t ed_load(void) { return a_bypass ? a_peak : a_load; }   /* PING: the DSP load, as at the bottom right */
 static uint32_t ed_flags(void) { return (a_bypass ? 1u : 0u) | (a_c1 ? 2u : 0u); }
-#include "px_editor.h"      /* the web editor (docs/EDITOR-PROTOCOL.md) */
+/* v40.1: the stacks' deepest use since boot. fm1_cstart paints them; the bytes at the bottom never written since are free */
+#define OP_PAINT 0x5AA5C33Cu
+extern char _ustack_top[];
+static uint32_t stack_free(const char *lo, const char *hi)
+{
+    const uint32_t *p = (const uint32_t *)(const void *)lo;
+    while ((const char *)p < hi && *p == OP_PAINT) p++;
+    return (uint32_t)((const char *)p - lo);
+}
+#if OP_BLE_TEST
+uint32_t ble_heap_min_free(void);
+uint32_t ble_stack_min_free(void);
 #endif
+static uint32_t ed_stat(uint32_t k)                    /* PING, after the flags */
+{
+    return k == 0u ? a_peak : k == 1u ? a_peak_all : k == 2u ? a_xrun : k == 3u ? a_clip
+         : k == 4u ? stack_free(_ustack_lo, _ustack_top) : k == 5u ? stack_free(_sstack_lo, _sstack_top)
+#if OP_BLE_TEST
+         : k == 6u ? ble_heap_min_free() : ble_stack_min_free();
+#else
+         : 0u;
+#endif
+}
+/* v40.2: PING's profile (14 bits each): each block's and the NAM network's share of an audio block's time over the last
+ * second (%, a_pf), the network's way of running (pxn_mode), then from its start-up timing (0.1 % of real time, the
+ * network alone): each way of running (px_nam_tuned), and where one core's time goes (pxn_prof_ticks); then the layer
+ * split: 0 off, else 1 + the last layer CPU0 runs; then with it CPU0's and CPU1's load and their peaks since the preset
+ * was set (%); v40.3: then the last full change: from the change to the sound back (0.1 ms, 0 while it fades in), the
+ * engine's set in it (0.1 ms), how long the last LOADING was shown (ms) and how many were since boot */
+#define ED_PROF (PX_NBLK + 2u + PXN_MODES + 9u + 5u + 4u)
+static uint32_t ed_prof(uint32_t k)
+{
+    if (k <= PX_NBLK) return a_pf[k];
+    if (k == PX_NBLK + 1u) return (uint32_t)pxn_mode();
+    k -= PX_NBLK + 2u;
+    if (k == PXN_MODES + 9u) return g_eng.nam_lp ? 1u + (uint32_t)px_nam_lp_split_used() : 0u;   /* v40.2 (v40.4: the last block's) */
+    if (k > PXN_MODES + 9u && k <= PXN_MODES + 13u) {  /* each core's load and peak (%), the layer split only */
+        const uint32_t j = k - PXN_MODES - 10u;
+        return g_eng.nam_lp ? (j < 2u ? a_cl[j] : a_cpk[j - 2u]) : 0u;
+    }
+    if (k >= PXN_MODES + 14u) {                        /* v40.3: the last full change (0.1 ms) and LOADING (ms, count) */
+        const uint32_t d = FM1_TICKS_PER_US * 100u;
+        const uint32_t v = k == PXN_MODES + 14u ? (a_swin ? 0u : (a_sw1 - a_swc) / d) : k == PXN_MODES + 15u ? a_swset / d
+                         : k == PXN_MODES + 16u ? a_ldms : a_ldn;
+        return v > 16383u ? 16383u : v;
+    }
+    const uint32_t t = k < PXN_MODES ? px_nam_tuned((int)k) : pxn_prof_ticks((int)(k - PXN_MODES));
+    return t * 10u / (A_BUDGET * 2u / 100u);           /* (ticks for 256 frames: two audio blocks) */
+}
+static void nm_changed(uint32_t s)   /* v37: a user model was written or erased: the engine reloads it if it plays it */
+{
+    if (g_eng.nam_idx == (int)(PX_NAM_NFACT + s)) g_eng.nam_idx = -1;
+    a_full = 1;                                        /* v38: the same knobs, another network: a full apply */
+    audio_apply();
+}
+static void ir_changed(uint32_t s)   /* v38: a user IR was written or erased: the engine reloads it if it plays it */
+{
+    if (g_eng.ir_slot == (int)s) g_eng.ir_slot = -1;
+    a_full = 1;
+    audio_apply();
+}
+#if OP_BLE_TEST             /* the log channel (firmware/ble/ble_diag.h): only this image answers DIAG, the normal firmware does not change */
+#define ED_STATS 8u         /* PING also gives the Bluetooth heap's and tasks' lowest free bytes */
+#if OP_BT_AUDIO
+#define ED_DIAG_LINES 12u   /* (the Bluetooth audio image: the HCI conversation, the music's FIFO, the interrupts' times
+                             * against the audio's, the second core, test build 19 its registers at a fault and its revivals,
+                             * bt/bt_a2dp.c; test build 28 the LE links and the editor, test build 33 the central role on a
+                             * line of its own, bt/bt_le_midi.c; tools/log.mjs reads them by position) */
+#define ED_OUT_BYTES 2754u  /* (its twelve lines of up to 223 characters: 12 x 225 and the reply's head; px_editor.h's is 1,024;
+                             * test build 33: 2,529 for eleven) */
+#else
+#define ED_DIAG_LINES 5u
+#endif
+#define ED_DIAG_LEN 224u
+static void ed_diag_line(uint32_t i, char *out);
+#endif
+#if OP_BT_AUDIO
+#define ED_BT 1             /* test build 27: the web editor over Bluetooth MIDI too (px_editor.h, bt/bt_le_midi.c) */
+#define ED_BT_LINKS 2u      /* (two LE links at once: bt/bt_le_links.h) */
+#endif
+#include "px_editor.h"      /* the web editor (docs/EDITOR-PROTOCOL.md) */
+#include "px_midi_io.h"     /* musical MIDI over USB (docs/MIDI.md) */
+#endif
+#endif
+#if LED_PROBE
+#if AUDIO_PROBE
+#error "LED_PROBE needs the normal build: USB (the web installer) is the way back"
+#endif
+#include "led_probe.h"      /* the LED map (issue #8) */
+#endif
+#if OP_BLE_TEST             /* the Bluetooth MIDI test image (docs/BLE-TEST.md): make ble */
+#include "ble/ble_os.c"
+#include "ble/ble_libc.c"
+#if OP_BT_AUDIO             /* the Bluetooth audio test image (docs/BT-AUDIO-TEST.md): make bt. The same image, the classic stack */
+#include "bt/bt_cfg.c"
+#include "ble/ble_rf.c"
+#include "bt/bt_stubs.c"
+#include "bt/bt_glue.c"
+#include "bt/bt_a2dp.c"
+#include "bt/bt_irq.c"           /* the classic baseband's interrupt handlers (bt/bt_isr.S enters them) */
+#include "bt/bt_le_midi.c"       /* test build 23: BLE MIDI beside the music (the LE controller and host linked too) */
+#else
+#include "ble/ble_cfg.c"
+#include "ble/ble_rf.c"
+#include "ble/ble_stubs.c"
+#include "ble/ble_test.c"
+#include "ble/ble_midi.c"
+#endif
+#include "ble/ble_diag.h"
+#if OP_BT_AUDIO
+#define BT_OFF_BY_KEY bt_off_by_key      /* (bt/bt_a2dp.c: REV held at power-on) */
+#else
+#define BT_OFF_BY_KEY 0
+#endif
+static void ed_diag_line(uint32_t i, char *out)
+{
+    if (i == 0u) ble_boot_text(out, ms_now(), op_diag.safe, op_diag.stage, op_pwr.rst, guard.failed);
+    else if (i == 1u) ble_last_text(out, &ble_last);
+    else if (i == 2u) ble_test_line(out);
+    else if (i == 3u) ble_midi_line(out);
+#if OP_BT_AUDIO
+    else if (i == 5u) bt_hci_line(out);
+    else if (i == 6u) bt_fifo_line(out);  /* (test build 13; build 12: the phone's packets at the controller; 9 to 11: the first
+                                           * HCI messages since boot) */
+    else if (i == 7u) bt_isr_line(out);
+    else if (i == 8u) bt_c1_line(out);
+    else if (i == 9u) bt_c1r_line(out);   /* (test build 19) */
+    else if (i == 10u) bt_le_line(out);   /* (test build 28: the LE links, the editor; up to 32 the central role too) */
+    else if (i == 11u) bt_le_cen_line(out);   /* (test build 33: the central role for the footswitch) */
+#endif
+    else ble_trace_line(out);
+}
 #endif
 
 /* P3_RST_SRC as read at boot: why the chip last reset (fm1_sys.h) */
@@ -563,28 +781,70 @@ static void app_main(void)
     enum { B_PUSH, B_FSUP, B_FSDN, B_FX, B_MOD, B_AMP, B_CAB, B_DLY, B_REV, NBTN };
     dbn_t btn[NBTN] = {{0,0,0}};
     dbn_t bhome = {0,0,0};
-    uint32_t adc_tick = 0, home_t = 0, t_knob = 0, t_tuner = 0;
-    int home_down = 0, home_long = 0, push_down = 0, push_long = 0;
-    uint32_t push_t = 0, clk_t = 0;
-    int clk_pend = 0;                    /* chain page: a PUSH waiting to see if a 2nd one makes it a double-click */
+    uint32_t adc_tick = 0, t_knob = 0, t_tuner = 0;
     int32_t master_raw = -100;
+#if OP_BT_AUDIO
+    /* test build 18: the stock core supplies first, before anything else runs. M-VAVE's V22 (2026-11-12) now sets them in its
+     * boot loader (isd_config.ini DVDD=15, DCDC14=7): VDC14 1.40 -> 1.60 V, then SYSVDD 1.26 -> 1.38 V with its strong drive, a
+     * level per 100 us (fm1_sys.h; the timer runs since fm1_cstart). Test builds 15 to 17 raised them only after the second core
+     * had started; the rest of the stock power setup follows the power-on keys (below) */
+    fm1_vdc14_raise(7u);
+    fm1_p33_or(FM1_P3_ANA_CON6, 0x08u);
+    fm1_p33_or(FM1_P3_ANA_CON9, 0x10u);
+    fm1_sysvdd_raise(15u);
+#endif
+#if !AUDIO_PROBE
+    {   /* before the second core starts: the data-cache ways as RAM (through a pointer: it is RAM code) */
+        void (*volatile f)(void) = pxc_init;
+        f();
+    }
+#endif
 #if DSP_CPU1
-    fm1_cpu1_bar_build(27u);             /* a new build gives the 2nd core another chance */
+#if OP_BT_AUDIO
+    /* each Bluetooth test build its own id: test build 4's crash barred the second core with the release's id, 402, and every
+     * test build after it passed 402 again, so the bar stayed (NOINIT survives a flash) and builds 5 to 10 most likely ran the
+     * whole DSP on one core, until a real power-off */
+    fm1_cpu1_bar_build(0x42540000u + BT_TEST_BUILD);
+#else
+    fm1_cpu1_bar_build(403u);            /* a new build gives the 2nd core another chance (v40.4: its job and the blocks' loops changed) */
+#endif
     fm1_cpu1_start();                    /* at boot, before audio and interrupts (Felucca) */
 #endif
     lcd_init();
     /* boot screen with the version: shows which image is running */
     lcd_rect(0,0,240,240,UI_BG);
     ft_box(0, 98, 240, "OPENPOCKET", &FT_MD, UI_ACC, UI_BG, 1);
+#if OP_BT_AUDIO
+    ft_box(0, 126, 240, OP_VERSION " BT AUDIO TEST " BT_TEST_BUILD_TEXT, &FT_SM, UI_DIM, UI_BG, 1);   /* (2: the stall record; 3: the baseband's window, bt/app-bt.ld;
+                                                                                       * 4: its interrupts above the audio's, ble/ble_os.c; 5: their own entry, bt/bt_irq.c;
+                                                                                       * 6: the radio pools' header at the pool, bt/bt_lbuf.h;
+                                                                                       * 7: the HCI events in the log, bt/bt_a2dp.c;
+                                                                                       * 8: whole task messages, ble/ble_os.c;
+                                                                                       * 9: the HCI conversation from the queues;
+                                                                                       * 10: recursive mutexes, ble/ble_os.c;
+                                                                                * 11: the pairing's four walls, the second core's bar,
+                                                                                *     the clock, the waits in an interrupt, the isr line;
+                                                                                * 12: the phone's packets from the controller's hook into
+                                                                                *     a FIFO, two output slots, the second core's record;
+                                                                                * 13: the reverb's loop cut at its block's end and counted,
+                                                                                *     the registers on the LAST BOOT FAILED report;
+                                                                                * 14: on OpenPocket v42: the callbacks' order by its
+                                                                                *     px_aorder.h, the layer split's worker, the folded
+                                                                                *     controller library, firmware/build.sh) */
+#elif OP_BLE_TEST
+    ft_box(0, 126, 240, OP_VERSION " BLE TEST", &FT_SM, UI_DIM, UI_BG, 1);
+#else
     ft_box(0, 126, 240, OP_VERSION, &FT_SM, UI_DIM, UI_BG, 1);
+#endif
 #if !AUDIO_PROBE
-    {   /* the supplies as found -> as set (fm1_cstart): "PWR 3>7 11>15 DCDC" */
+    ft_box(0, 150, 240, "STARTING", &FT_SM, UI_TXT, UI_BG, 1);   /* v42: a plain word first, the numbers small below */
+    {   /* the supplies as found (fm1_cstart) and why the chip last reset */
         char l[32]; l[0] = 0;
         b_str(l, "PWR "); b_num(l, op_pwr.vdc0); b_str(l, " "); b_num(l, op_pwr.sys0); b_str(l, " (BOOT LEVELS)");
-        ft_box(0, 150, 240, l, &FT_SM, UI_DIM, UI_BG, 1);
+        ft_box(0, 196, 240, l, &FT_SM, UI_DIM, UI_BG, 1);
         char h[9]; l[0] = 0;
         b_str(l, "RST "); rst_names(l, op_pwr.rst); b_str(l, " PINR "); hex8(h, op_pwr.pinr); b_str(l, h + 6);
-        ft_box(0, 170, 240, l, &FT_SM, UI_DIM, UI_BG, 1);
+        ft_box(0, 214, 240, l, &FT_SM, UI_DIM, UI_BG, 1);
     }
 #endif
     for (int i = 0; i < 6; i++) { fm1_wdt_feed(); fm1_delay_ms(100); }
@@ -600,37 +860,81 @@ static void app_main(void)
         if ((st != ST_OK || crashed) && !op_diag.safe) {
             char l[48], h[9];
             safe = 1;                    /* this boot: DSP bypassed, so the pedal stays usable */
-            lcd_rect(0, 0, 240, 240, UI_BG);
-            ft_box(0, 6, 240, "LAST BOOT FAILED", &FT_MD, RED, UI_BG, 1);
+            lcd_rect(0, 0, 240, 240, UI_BG);   /* v42: what happened and what to do first, the numbers for a bug report below */
+            ft_box(0, 6, 240, "LAST START FAILED", &FT_MD, RED, UI_BG, 1);
+            ft_box(0, 34, 240, "THE EFFECTS ARE OFF FOR THIS START", &FT_SM, UI_TXT, UI_BG, 1);
+            ft_box(0, 52, 240, "SWITCH OFF AND ON TO TRY AGAIN", &FT_SM, UI_TXT, UI_BG, 1);
             l[0] = 0; b_str(l, "STOPPED AT: "); b_str(l, ST_NAME[st]);
-            ft_box(0, 40, 240, l, &FT_SM, UI_TXT, UI_BG, 1);
+            ft_box(0, 78, 240, l, &FT_SM, UI_DIM, UI_BG, 1);
             if (!crashed) {
                 l[0] = 0; b_str(l, "RESET BY: "); rst_names(l, op_pwr.rst);
-                ft_box(0, 62, 240, l, &FT_SM, UI_ACC, UI_BG, 1);
+                ft_box(0, 96, 240, l, &FT_SM, UI_DIM, UI_BG, 1);
             }
             if (crashed) {
                 l[0] = 0; b_str(l, "CRASH  PC "); hex8(h, fm1_crash.pc); b_str(l, h);
-                ft_box(0, 62, 240, l, &FT_SM, UI_ACC, UI_BG, 1);
+                ft_box(0, 96, 240, l, &FT_SM, UI_DIM, UI_BG, 1);
                 l[0] = 0; b_str(l, "RETS "); hex8(h, fm1_crash.rets); b_str(l, h); b_str(l, "  VEC "); b_num(l, fm1_crash.vec);
-                ft_box(0, 80, 240, l, &FT_SM, UI_ACC, UI_BG, 1);
+                ft_box(0, 114, 240, l, &FT_SM, UI_DIM, UI_BG, 1);
+#if OP_BT_AUDIO
+                {   /* test build 13: the registers at the crash, in place of the DSP code's address. fm1_crash_ctx's slot is this
+                     * crash's when its count is (fm1_irq.h fm1_fault_c, at every crash of CPU0's); else a dash (not expected: CPU1's
+                     * faults retire it, FM1_CPU1_FALLBACK). In build 12's reverb loop (rv_block) R1 held its end n as reloaded, R6
+                     * k + 1, R12 the address it wrote + 4 (build 13's code may use others: rn, after the CI listing listings/px_dsp.s) */
+                    const fm1_crash_ctx_t *x = &fm1_crash_ctx[fm1_crash.count % FM1_CRASH_CTX_N];
+                    const int ok = x->count == fm1_crash.count;
+                    static const char nm[4][6] = { "R1 ", "  R6 ", "R12 ", "  SP " };   /* (a loop: the smallest code) */
+                    static const uint8_t rn[3] = { 1, 6, 12 };
+                    char *o = l;
+                    for (int i = 0; i < 4; i++) {
+                        o = ble__put(o, nm[i]);
+                        if (ok) o = bt__hex(o, i < 3 ? x->r[rn[i]] : fm1_crash.sp, 8); else *o++ = '-';
+                        if (i & 1) { *o = 0; ft_box(0, i == 1 ? 132 : 150, 240, l, &FT_SM, UI_DIM, UI_BG, 1); o = l; }
+                    }
+                }
+#define LBF_Y(y) ((y) + 18)   /* (the lines below: one line further down) */
+#else
                 l[0] = 0; b_str(l, "DSP CODE AT "); hex8(h, (uint32_t)(uintptr_t)px_block_label); b_str(l, h);
-                ft_box(0, 98, 240, l, &FT_SM, UI_DIM, UI_BG, 1);
+                ft_box(0, 132, 240, l, &FT_SM, UI_DIM, UI_BG, 1);
+#define LBF_Y(y) y          /* (the release and BLE images: v42's lines) */
+#endif
                 l[0] = 0; b_str(l, "UPTIME "); b_num(l, fm1_crash.uptime_ms); b_str(l, " MS  DBG "); hex8(h, fm1_crash.dbg); b_str(l, h);
-                ft_box(0, 116, 240, l, &FT_SM, UI_DIM, UI_BG, 1);
+                ft_box(0, LBF_Y(150), 240, l, &FT_SM, UI_DIM, UI_BG, 1);
             }
             l[0] = 0; b_str(l, "BLOCKS "); b_num(l, op_diag.blocks); b_str(l, "  LOAD "); b_num(l, op_diag.load);
             b_str(l, "%  PEAK "); b_num(l, op_diag.peak); b_str(l, "%");
-            ft_box(0, 140, 240, l, &FT_SM, UI_TXT, UI_BG, 1);
+            ft_box(0, LBF_Y(168), 240, l, &FT_SM, UI_DIM, UI_BG, 1);
             l[0] = 0; b_str(l, "NAN "); b_num(l, op_diag.nans); b_str(l, "  CPU1 "); b_num(l, op_diag.c1);
             b_str(l, "  LOOPS "); b_num(l, op_diag.loops);
-            ft_box(0, 158, 240, l, &FT_SM, UI_TXT, UI_BG, 1);
-            ft_box(0, 184, 240, "PLEASE TAKE A PHOTO", &FT_MD, UI_ACC, UI_BG, 1);
-            ft_box(0, 212, 240, "SAFE MODE: DSP OFF THIS BOOT", &FT_SM, UI_DIM, UI_BG, 1);
+            ft_box(0, LBF_Y(186), 240, l, &FT_SM, UI_DIM, UI_BG, 1);
+#if OP_BT_AUDIO             /* (test build 13's two register lines: the photo line one line further down, the screen's last) */
+#if DSP_CPU1
+            if (crashed && op_c1x.crash == fm1_crash.count) {   /* test build 14: the second core's record at CPU0's crash, in the
+                                                                  * photo line's place: "C1 F count/cpu ms PC pc" (fm1_fault) */
+                char *o = ble__put(l, "C1 F ");
+                o = bt__dec(o, op_c1x.count); *o++ = '/'; o = bt__dec(o, op_c1x.cpu); *o++ = ' ';
+                o = bt__dec(o, op_c1x.ms); o = ble__put(o, " MS PC "); o = bt__hex(o, op_c1x.pc, 8); *o = 0;
+                ft_box(0, 222, 240, l, &FT_SM, UI_ACC, UI_BG, 1);
+            } else
+#endif
+            ft_box(0, 222, 240, "PHOTO THIS FOR A BUG REPORT", &FT_SM, UI_ACC, UI_BG, 1);
+#else
+            ft_box(0, 212, 240, "PHOTO THIS FOR A BUG REPORT", &FT_SM, UI_ACC, UI_BG, 1);
+#endif
             for (int i = 0; i < 120; i++) { fm1_wdt_feed(); fm1_delay_ms(100); }   /* 12 s */
             lcd_rect(0, 0, 240, 240, UI_BG);
             ft_box(0, 98, 240, "OPENPOCKET", &FT_MD, UI_ACC, UI_BG, 1);
             ft_box(0, 126, 240, OP_VERSION " SAFE MODE", &FT_SM, UI_DIM, UI_BG, 1);
         }
+#if OP_BLE_TEST
+        ble_last = (ble_boot_t){ st != ST_OK || crashed, crashed, st, op_diag.blocks, op_diag.load, op_diag.peak, op_diag.nans, op_diag.c1,
+                                 op_diag.loops, fm1_crash.vec, fm1_crash.pc, fm1_crash.rets, fm1_crash.dbg, fm1_crash.emu, fm1_crash.uptime_ms };
+#if OP_BT_AUDIO && DSP_CPU1
+        if (crashed && op_c1x.crash == fm1_crash.count) {   /* (test build 14: the second core's record at that crash) */
+            ble_last.c1x = 1; ble_last.c1n = op_c1x.count; ble_last.c1cpu = op_c1x.cpu;
+            ble_last.c1ms = op_c1x.ms; ble_last.c1pc = op_c1x.pc;
+        }
+#endif
+#endif
         op_diag.crash_seen = cc; op_diag.safe = (uint32_t)safe;
         op_diag.blocks = op_diag.load = op_diag.peak = op_diag.nans = op_diag.c1 = op_diag.loops = 0;
     }
@@ -639,48 +943,166 @@ static void app_main(void)
     adc_pins_analog();
     input_baseline();
     keys_capture_idle();
+#if OP_BT_AUDIO
+    /* the keys held at power-on (test build 18): CAB = one core (the second held before the audio starts: builds 5-10 ran so,
+     * barred, with no start-up crash; the stage's way out if two cores fail); DLY = without the rest of the stock power setup.
+     * (Test builds 16-17's DLY, the radio's interrupts below the audio as the stock firmware has them, is gone: test build 3 ran
+     * so and could not pair, OpenPocket's audio interrupt being the whole DSP block, not stock's DMA work; ble/ble_os.c) */
+#if DSP_CPU1
+    if (keys_held_at_boot == 1 && !safe) { fm1_cpu1_stop(); fm1_cpu1_on = 0; }
+#endif
+    /* test build 18: the rest of M-VAVE's power setup (fm1_sys.h fm1_power_stock, from its firmware's __hw_power_init): the 1.3 V
+     * supply moved onto its DC-DC and tuned, VDDIOM 4 (V22's isd_config.ini VDDIO=4), the radio's 1.2 V regulator on automatic
+     * (on an FM-1 without them the radio heard far less). The second core idles in its RAM loop here, no audio yet. DLY held:
+     * not done, as up to test build 17 (on a Pocket X the release's v30 slowed and crackled with the DC-DC: the A/B by ear) */
+    if (!BT_PWR_KEY || keys_held_at_boot != BT_PWR_KEY) bt_pwr_stock = (uint8_t)(1 + fm1_power_stock());   /* (test build 28:
+                                                                                           * no key leaves it out, BT_PWR_KEY) */
+#endif
     op_stage(ST_PRESET, "PRESET...");
     load_preset(cur_preset);
+#if LED_PROBE
+    px_flash_boot();
+    px_store_boot();
+    px_usb_start();                      /* USB-MIDI + update entry: the web installer is the way back */
+    fm1_irq_enable_all();                /* audio_start does it in the normal build; here no audio is started */
+    led_probe_run();                     /* never returns */
+#endif
 #if AUDIO_PROBE
     audio_probe_run();
 #else
     a_hold = 1;                          /* DSP bypassed until the UI is up and 1.5 s have passed */
-    px_usb_start();                      /* USB-MIDI device + update entry (web installer) */
-    px_store_boot();                     /* the saved presets; start on the last one saved */
+    px_flash_boot();                     /* the flash's size; a staging area an update left */
+    px_store_boot();                     /* the saved presets and the settings; start on the last one saved */
+    px_usb_start();                      /* USB-MIDI device + update entry (web installer); v42: USB audio when set */
+    nm_scan();                           /* v37: the NAM user models (names, levels) */
+    ir_scan();                           /* v38: the user cabinet IRs (names) */
+#if DSP_CPU1
+    px_nam_helper(a_hrun, a_hwait);      /* v37: CPU1 can take a part of the NAM network */
+#endif
+#if OP_BLE_TEST
+    {   /* the vector unit's inputs: what the cache RAM has left after the tuner's buffers (app.ld .cram) */
+        extern char _cram_hi[];
+        uint32_t lo = (uint32_t)(uintptr_t)_cram_hi;
+        if (pxc_status == PXC_READY && lo < PXC_END) px_nam_fast((void *)(uintptr_t)lo, PXC_END - lo);
+        if (pxc_status == PXC_READY && lo + PXN_FAST_BYTES + PX_NAM_LP_BYTES <= PXC_END)   /* v40.2: then the layer split's */
+            px_nam_lp_mem((void *)(uintptr_t)(lo + PXN_FAST_BYTES), PX_NAM_LP_BYTES);
+    }
+#else
+    if (pxc_status == PXC_READY) {
+        px_nam_fast((void *)PXC_BEGIN, PXC_END - PXC_BEGIN);   /* the vector unit's inputs */
+        px_nam_lp_mem((void *)(PXC_BEGIN + PXN_FAST_BYTES), PX_NAM_LP_BYTES);   /* v40.2: then the layer split's queue */
+    }
+#endif
+    /* v37: the NAM routines by hand checked, its fastest way to run chosen. v40.2: not after a failed boot (safe mode,
+     * the DSP off anyway): a hand routine that faults in its check then costs one boot, not every one, and the pedal
+     * comes up with USB-MIDI for the installer's rescue (it ran C until the next boot) */
+#if OP_BT_AUDIO
+    if (!safe && keys_held_at_boot != 3) bt_flash_reads();   /* Bluetooth's flash reads, before the audio: no CPU1 job yet */
+#endif
+    if (!safe) px_nam_check(b_ticks);
+    /* v40.5: from here (after the start-up check), CPU0's waits for CPU1 inside the network end as fm1_cpu1_wait's
+     * do (px_audio.h dsp_lp_run: retired, LATE) */
+    px_nam_lp_clock(b_ticks, FM1_CPU1_TIMEOUT_US * FM1_TICKS_PER_US);
     audio_start();                       /* guitar -> DSP engine -> output, amp enabled */
+    leds_init();                         /* the button lights: all off loaded, then on (PC7 low), as stock */
     op_stage(ST_UI, "SCREEN...");
     lcd_rect(0, 0, 240, 240, UI_BG);
     ui_invalidate();
     ui_render();
     op_stage(ST_RUN, 0);
 #endif
+#if OP_BLE_TEST
+    ble_os_init();                       /* the task table, before the main loop polls it (ble_os.c: it lives in NOINIT) */
+#if OP_BT_AUDIO
+    /* the Bluetooth audio image's power-on keys (the log's c1 line shows KEY, whichever was held). Test build 14: none held, the
+     * DSP waits for Bluetooth's start-up (bt/bt_a2dp.c bt_dsp_may_start); DLY, the DSP at 1.5 s as in test build 13 (the
+     * 1.96 s window kept measurable); CAB, the same and the stock core supplies (above, after keys_capture_idle); REV: */
+    if (keys_held_at_boot == 3) bt_off_by_key = 1;   /* REV held at power-on: this boot without Bluetooth (an A/B by ear) */
+    if (keys_held_at_boot == BT_CEN_OFF_KEY) le_cen_off = 1;   /* test build 28, DLY: no central role (bt/bt_le_midi.c) */
+#if BT_LE_ROLES != 31
+    le_cen_off = 1;                     /* (test build 29: the LE roles of 27, so no central role at all: bt/bt_cfg.c BT_LE_ROLES) */
+#endif
+    bt_canary_arm();                     /* (test build 14: the pattern after the Bluetooth heap, checked by ble_test_poll) */
+#endif
+    if (!safe && !BT_OFF_BY_KEY)         /* after a failed boot Bluetooth stays off: the pedal runs, and can be re-flashed */
+        ble_test_start();                /* radio on, controller and host up, advertising (the pedal keeps working) */
+#endif
     enc_last = (uint8_t)(PC_IN & ENC_MASK);
     for (;;) {
         uint32_t now = ms_now();
         fm1_wdt_feed();
+#if OP_BLE_TEST
+        ble_test_poll();
+#endif
 #if !AUDIO_PROBE
         px_usb_service(now);             /* web installer: handshake, update, UBOOT soft key */
-        audio_poll(now);                 /* the sound follows the UI (preset, settings, volume) */
-        if (ui_mode != M_TUNER) {        /* DSP load at the bottom right: "C1 42%" (2nd core), "C0" or BYP */
-            static uint32_t t_cpu;
-            if (now - t_cpu >= 500u) {
-                t_cpu = now;
-                char c[10];
-                uint32_t l = a_bypass ? a_peak : a_load; int i = 0;
-                if (l > 999u) l = 999u;
-                if (safe) { c[i++]='S'; c[i++]='A'; c[i++]='F'; c[i++]='E'; c[i++]=' '; }
-                else if (a_bypass) { c[i++]='B'; c[i++]='Y'; c[i++]='P'; c[i++]=' '; }
-                else { c[i++]='C'; c[i++]=(char)(a_c1 ? '1' : '0'); c[i++]=' '; }
-                if (l >= 100u) c[i++] = (char)('0' + l / 100u);
-                if (l >= 10u) c[i++] = (char)('0' + (l / 10u) % 10u);
-                c[i++] = (char)('0' + l % 10u); c[i++] = '%'; c[i] = 0;
-                ui_status(c, a_bypass);
-            }
-        } else if (now - t_tuner >= 100u) { t_tuner = now; tuner_draw(tuner_estimate()); }
+#if FELUCCA_USB_HOST
+        px_uh_service();                 /* test build 41: the footswitch by cable, while SETTINGS' USB PORT says FOOTSW */
 #endif
+        px_midi_service();               /* USB-MIDI: Program / Control Change in, the pedal's own changes out */
+        lights_update(&PRESET, ui_mode == M_TUNER, now);   /* the button lights follow the blocks */
+        if (ui_mode != M_TUNER) {        /* DSP load in the status corner: "DSP 42%", "PEAK 150%" (bypassed), "SAFE 42%" */
+            static uint32_t t_cpu;
+            static uint8_t ld_shown;
+            if (now - t_cpu >= 500u || a_ld != ld_shown) {   /* (LOADING on and off at once) */
+                t_cpu = now; ld_shown = a_ld;
+                mid_c1_off = a_c1 ? 0u : (fm1_cpu1_gave_up ? fm1_cpu1_gave_up : 0xFFu);   /* v41: why the 2nd core stopped (MIDI page) */
+                char c[16];
+                int late = a_xrun && a_blocks - a_xrun_at < 700u;   /* a block ran late in the last 2 s: "DSP 88%!" in red */
+                uint32_t ld = a_bypass ? a_peak : a_load;
+                ui_dg.load = ld; ui_dg.peak = a_peak; ui_dg.cl[0] = a_cl[0]; ui_dg.cl[1] = a_cl[1];   /* (v42: the diagnostics page) */
+                ui_dg.cores = (uint8_t)(a_c1 ? (px_nam_dual(&g_eng) ? 2u : 1u) : 0u);
+                ui_dg.split = (uint8_t)(g_eng.nam_lp != 0); ui_dg.guard = (uint8_t)(a_c1 ? 93u : 85u);   /* (px_audio.h's dsp_load limits) */
+                ui_dg.late = (uint8_t)late; ui_dg.bypass = a_bypass;
+                ui_load_text(c, ld, safe, a_bypass, late);
+                int kind = ui_load_kind(ld, safe, a_bypass, late, a_ld);   /* v40.3: LOADING a NAM model; v42: amber when high */
+                bat_raw[2] = (int32_t)a_xrun; bat_raw[3] = (int32_t)a_clip; bat_raw[4] = (int32_t)a_peak_all;   /* diagnostics page */
+#if OP_BLE_TEST
+                {   /* "STARTING 4 C1 42%": the Bluetooth state first; FAILED and ADVERTISING scroll their long lines instead (ble_status.h) */
+                    char b[48], full[224]; int k, j;   /* (ED_DIAG_LEN: the Bluetooth audio image's lines are longer) */
+                    static uint32_t scroll;
+                    ble_test_state(b);
+                    if (a_bypass || late) {  /* (test build 11: the DSP's text, red, for 2 s after a late block, as the release shows it) */
+                        for (j = 0; c[j]; j++) b[j] = c[j];
+                        b[j] = 0;
+                    } else if (ble_state == BLE_FAILED || ble_state == BLE_ADV) {   /* longer than the status area: scroll it (ble_status.h) */
+                        if (ble_conn) ble_midi_line(full); else ble_test_line(full);
+                        ble_marquee(full, scroll++, 11, b);
+                    } else {
+                        for (k = 0; b[k]; k++) ;
+                        b[k++] = ' ';
+                        for (j = 0; c[j]; j++) b[k++] = c[j];
+                        b[k] = 0;
+                    }
+                    ui_status(b, kind);
+                }
+#else
+                ui_status(c, kind);
+#endif
+            }
+        }
+        if ((ui_mode == M_TUNER || ui_mode == M_DIAG) && now - t_tuner >= 100u) {
+            t_tuner = now;
+            if (ui_mode == M_TUNER) tuner_draw(tuner_estimate()); else diag_draw();
+        }
+#endif
+#if OP_BT_AUDIO && !AUDIO_PROBE
+        /* test build 14: the DSP may start up to 8 s after power-on (the hold, below). The boot guard (two starts in a row that
+         * do not get this far: UBOOT, fm1_cstart) is cleared at 6 s as before, so the longer wait adds no way to UBOOT; the
+         * stage OK (else the next start is safe mode) waits for 4.5 s of DSP as before, so a pedal that resets under load
+         * still starts in safe mode next, and a crash there does too (its record) */
+        if (!boots_ok && now > 6000u) { boots_ok = 1; guard.pending = 0; guard.failed = 0; }
+        if (boots_ok == 1u && (safe || (bt_dsp_ms && now - bt_dsp_ms >= 4500u))) { boots_ok = 2; op_diag.stage = ST_OK; }
+#else
         if (!boots_ok && now > 6000u) {   /* 4.5 s of DSP first: a pedal that resets under load is caught */ boots_ok = 1; guard.pending = 0; guard.failed = 0; op_diag.stage = ST_OK; }
+#endif
 #if !AUDIO_PROBE
+#if OP_BT_AUDIO
+        if (a_hold && !safe && now > 1500u && bt_dsp_may_start(now)) { a_hold = 0; bt_dsp_ms = now; }   /* DSP on (test build 14:
+                                                                         * once Bluetooth is up, bt/bt_a2dp.c; D in the c1 line) */
+#else
         if (a_hold && !safe && now > 1500u) a_hold = 0;   /* DSP on */
+#endif
         {
             static uint32_t t_diag;
             op_diag.loops++;
@@ -692,7 +1114,6 @@ static void app_main(void)
         }
 #endif
 
-        int any = 0;                     /* a control was used (also used to exit the tuner) */
         /* --- encoder (direction inverted: subtract); fast rotation = steps of 5 --- */
         uint8_t s = (uint8_t)(PC_IN & ENC_MASK);
         if (s != enc_last) {
@@ -702,31 +1123,21 @@ static void app_main(void)
             if (accum >= 4) { accum -= 4; dd = 1; } else if (accum <= -4) { accum += 4; dd = -1; }
             if (dd) {
                 int fast = (now - t_knob) < 45u; t_knob = now;
-                if (ui_mode == M_SAVE) save_knob(dd); else if (ui_mode != M_TUNER) ui_knob(dd, fast);
-                any = 1;
+                ui_turn(dd, fast);
             }
         }
         /* --- buttons (pressed = differs from the idle state) --- */
         uint32_t pa = (PA_IN & 0xFFFFu) ^ base_pa, ph = (PH_IN & 0xFFFFu) ^ base_ph;
-        /* PUSH: short press = usual action (on release), long press (0.8 s) = SAVE */
+        /* debounced: what is held. ui_buttons (ui.h) times the gestures: PUSH, HOME and FX act at a short release or after a
+         * hold, the others at the press */
         dbn_press(&btn[B_PUSH], (ph & PH_PUSH) != 0);
-        int push_now = btn[B_PUSH].stab != 0, p_push = 0, p_save = 0;
-        if (push_now && !push_down) { push_down = 1; push_long = 0; push_t = now; }
-        if (push_now && push_down && !push_long && now - push_t >= 800u) { push_long = 1; p_save = 1; }
-        if (!push_now && push_down) { push_down = 0; if (!push_long) p_push = 1; }
-        int p_up = dbn_press(&btn[B_FSUP], (pa & PA_FS_UP) != 0);
-        int p_dn = dbn_press(&btn[B_FSDN], (pa & PA_FS_DN) != 0);
-        int p_fx = dbn_press(&btn[B_FX], (pa & PA_FX) != 0);
-        int p_mod = dbn_press(&btn[B_MOD], (ph & PH_MOD) != 0);
-        int p_amp = dbn_press(&btn[B_AMP], (ph & PH_AMP) != 0);
-        /* HOME: short press = back to the chain, long press (0.7 s) = tuner */
+        dbn_press(&btn[B_FSUP], (pa & PA_FS_UP) != 0);
+        dbn_press(&btn[B_FSDN], (pa & PA_FS_DN) != 0);
+        dbn_press(&btn[B_FX], (pa & PA_FX) != 0);
+        dbn_press(&btn[B_MOD], (ph & PH_MOD) != 0);
+        dbn_press(&btn[B_AMP], (ph & PH_AMP) != 0);
         dbn_press(&bhome, (pa & PA_HOME) != 0);
-        int home_now = bhome.stab != 0, p_home = 0, p_tuner = 0;
-        if (home_now && !home_down) { home_down = 1; home_long = 0; home_t = now; }
-        if (home_now && home_down && !home_long && now - home_t >= 700u) { home_long = 1; p_tuner = 1; }
-        if (!home_now && home_down) { home_down = 0; if (!home_long) p_home = 1; }
 
-        int p_cab = 0, p_dly = 0, p_rev = 0;
         int32_t mv = -1;
         if (now - adc_tick >= 10u) {     /* analog keypad CAB/DLY/REV + MASTER knob, every 10 ms */
             adc_tick = now;
@@ -735,50 +1146,17 @@ static void app_main(void)
                 if (!t_bat || now - t_bat >= 2000u) { t_bat = now ? now : 1u; bat_read(); }
             }
             int k = keys_decode(adc_read2(ADC_CH_KEYS));
-            p_cab = dbn_press(&btn[B_CAB], k == KEY_CAB);
-            p_dly = dbn_press(&btn[B_DLY], k == KEY_DLY);
-            p_rev = dbn_press(&btn[B_REV], k == KEY_REV);
+            dbn_press(&btn[B_CAB], k == KEY_CAB);
+            dbn_press(&btn[B_DLY], k == KEY_DLY);
+            dbn_press(&btn[B_REV], k == KEY_REV);
             mv = adc_read2(ADC_CH_MASTER);
         }
 #if !AUDIO_PROBE
-        if (ui_mode == M_SAVE) {
-            if (p_push) save_confirm();
-            else if (p_home) save_close();
-        } else if (ui_mode == M_TUNER) {
-            if (p_push || p_save || p_up || p_dn || p_fx || p_mod || p_amp || p_cab || p_dly || p_rev || p_home) tuner_close();
-        } else if (p_save) {
-            save_open();
-        } else if (ui_mode == M_MOVE) {  /* moving a block: PUSH drops it, HOME puts it back */
-            clk_pend = 0;
-            if (p_push) ui_move_drop();
-            else if (p_home) ui_move_cancel();
-        } else {
-            /* chain page: double-click PUSH = move the selected block; a single click opens it (after 350 ms) */
-            if (p_push && ui_mode == M_CHAIN) {
-                if (clk_pend && now - clk_t < 350u) { clk_pend = 0; ui_move_start(); }
-                else { clk_pend = 1; clk_t = now; }
-                p_push = 0;
-            }
-            if (clk_pend && (now - clk_t >= 350u || ui_mode != M_CHAIN)) {
-                clk_pend = 0;
-                if (ui_mode == M_CHAIN) ui_push();
-            }
-            if (ui_mode == M_MOVE) { }
-            else if (p_tuner) tuner_open();
-            else {
-                if (p_push) ui_push();
-                if (p_up) ui_preset_step(+1);
-                if (p_dn) ui_preset_step(-1);
-                if (p_home) ui_home();
-                if (p_fx) ui_fx_cycle();
-                if (p_mod) ui_enter_block(PX_B_MOD);
-                if (p_amp) ui_enter_block(PX_B_AMP);
-                if (p_cab) ui_enter_block(PX_B_CAB);
-                if (p_dly) ui_enter_block(PX_B_DELAY);
-                if (p_rev) ui_enter_block(PX_B_REVERB);
-            }
-        }
-        (void)any;
+        ui_buttons(now, (uint32_t)(btn[B_FSUP].stab != 0) << UB_FSUP | (uint32_t)(btn[B_FSDN].stab != 0) << UB_FSDN |
+                        (uint32_t)(btn[B_PUSH].stab != 0) << UB_PUSH | (uint32_t)(bhome.stab != 0) << UB_HOME |
+                        (uint32_t)(btn[B_FX].stab != 0) << UB_FX | (uint32_t)(btn[B_MOD].stab != 0) << UB_MOD |
+                        (uint32_t)(btn[B_AMP].stab != 0) << UB_AMP | (uint32_t)(btn[B_CAB].stab != 0) << UB_CAB |
+                        (uint32_t)(btn[B_DLY].stab != 0) << UB_DLY | (uint32_t)(btn[B_REV].stab != 0) << UB_REV);
 #endif
         if (mv >= 0) {
             /* smoothing (x16 moving average, ~160 ms) then hysteresis of 2 on the 0..100 volume */
@@ -792,6 +1170,8 @@ static void app_main(void)
             if (dv >= 2 || (nv == 0u && master_vol != 0u) || (nv == 100u && master_vol != 100u)) master_vol = nv;
         }
 #if !AUDIO_PROBE
+        audio_poll(now, preset_new);     /* the sound follows the UI (preset, settings, volume), before the screen redraws */
+        preset_new = 0;
         ui_render();                     /* redraws only what changed */
 #endif
     }
@@ -801,6 +1181,11 @@ void fm1_cstart(void)
 {
     uint32_t *s, *d;
     uint32_t vdc0, sys0, dcdc, rst0, pinr0;
+    {   /* v40.1: paint the stacks (interrupts are still off), for their deepest use (ed_stat) */
+        volatile uint32_t here;
+        for (d = (uint32_t *)(void *)_ustack_lo; (char *)d < (char *)&here - 256; d++) *d = OP_PAINT;
+        for (d = (uint32_t *)(void *)_sstack_lo; (char *)d < _sstack_top - 256; d++) *d = OP_PAINT;
+    }
     fm1_time_init();
     /* v31, issue #1: the stock firmware's first act is P3_PINR_CON = 0, the long-press reset off (BlackBox_020
      * f_0200698a). Left on, a pin held at its active level resets the chip every 4 s (the SDK offers 4 or 8 s):
@@ -826,12 +1211,21 @@ void fm1_cstart(void)
     if (guard.failed >= 2u) { guard.failed = 0; guard.pending = 0; fm1_enter_uboot(); }
     fm1_irq_init();
     for (d = _bss_start; d < _bss_end; d++) *d = 0;
+    for (d = _bss_hi_start; d < _bss_hi_end; d++) *d = 0;
+    for (d = _pool_tail_start; d < _pool_tail_end; d++) *d = 0;
+    for (d = _bss_lo_start; d < _bss_lo_end; d++) *d = 0;
     for (s = _data_load, d = _data_start; d < _data_end; s++, d++) *d = *s;
+#if OP_BT_AUDIO   /* test build 17: the firmware's own data, above the radio's window (bt/app-bt.ld .data_hi) */
+    {
+        extern uint32_t _data_hi_start[], _data_hi_end[], _data_hi_load[];
+        for (s = _data_hi_load, d = _data_hi_start; d < _data_hi_end; s++, d++) *d = *s;
+    }
+#endif
     for (s = _rt_load, d = _rt_start; d < _rt_end; s++, d++) *d = *s;
     op_pwr.vdc0 = (uint8_t)vdc0; op_pwr.vdc1 = (uint8_t)fm1_vdc14();
     op_pwr.sys0 = (uint8_t)sys0; op_pwr.sys1 = (uint8_t)fm1_sysvdd(); op_pwr.dcdc = (uint8_t)dcdc;
     op_pwr.rst = (uint8_t)rst0; op_pwr.pinr = (uint8_t)pinr0;
-    fm1_guard_enable(FM1_GUARD_STACK | FM1_GUARD_WRITE | FM1_GUARD_BUS | FM1_GUARD_PC);
+    fm1_guard_enable((OP_GUARD_STACK ? FM1_GUARD_STACK : 0) | FM1_GUARD_WRITE | FM1_GUARD_BUS | FM1_GUARD_PC);
     app_main();
     for (;;) ;
 }
