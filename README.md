@@ -17,6 +17,9 @@ ettorebox started as OpenPocket's Bluetooth test image and grew into a firmware 
 pedal, a Bluetooth footswitch, the web editor over Bluetooth, scenes, a two-job expression pedal and effects of its own.
 It is free software under the GPL-3.0, like OpenPocket.
 
+**[The manual](docs/MANUAL.md):** installing it, every control and page of the pedal, the sounds, presets and scenes,
+controllers, Bluetooth, USB, the web editor, and what is inside.
+
 Not affiliated with M-VAVE, Donner or the OpenPocket maintainers. Install at your own risk.
 
 ## Status
@@ -62,7 +65,8 @@ and what to check on each.
 11. Tap tempo (CC 116), next and previous preset (CC 118 and 119), the expression pedal (CC 117), and a SETTINGS page
     (input gain, tails, Bluetooth power, output, the scene rules).
 
-The details: [docs/MIDI.md](docs/MIDI.md) (controls, scenes, the two-job pedal, settings), [docs/OWN-FX.md](docs/OWN-FX.md)
+The details: [docs/MANUAL.md](docs/MANUAL.md) (how to use it), [docs/MIDI.md](docs/MIDI.md) (controls, scenes, the two-job
+pedal, settings), [docs/OWN-FX.md](docs/OWN-FX.md)
 (the effects), [docs/BT-AUDIO-TEST.md](docs/BT-AUDIO-TEST.md) (Bluetooth and each test build).
 
 ## What it leaves out
@@ -73,7 +77,8 @@ To fit the Bluetooth stack, compared with OpenPocket:
 - Delay times over 780 ms (REVERSE stops at 390 ms).
 - Lowercase letters on the pedal's screen.
 
-Every model both have plays as OpenPocket's, sample for sample (`tests/ownfx_equiv.sh`).
+Every model it did not change plays as OpenPocket's, sample for sample (`tests/ownfx_equiv.sh`); the ones it changed are in
+[docs/OWN-FX.md](docs/OWN-FX.md).
 
 ## Install
 
