@@ -2,6 +2,17 @@
 
 Guitar firmware for the M-VAVE BlackBox, built on [OpenPocket](https://github.com/isod89/openpocket).
 
+
+I've been working on my own firmware for the BlackBox for the last few weeks. It's called ettorebox. 
+
+A tribute to my grandfather, which i never met. He used to live with a guitar in his hands. 
+
+And to my first son, the toughest 11yr old badass this world has ever met.
+
+I work for commercial entities. But when i'm proud of something, i give it the name of my sons. This is my first project, so Ettorebox!
+
+BEWARE: for Blackbox with version 20 or below. I am seeking for bricked blackbox to fix, so contact me if you wanna try to restore this with Ettorebox
+
 ettorebox started as OpenPocket's Bluetooth test image and grew into a firmware of its own: the phone's music through the
 pedal, a Bluetooth footswitch, the web editor over Bluetooth, scenes, a two-job expression pedal and effects of its own.
 It is free software under the GPL-3.0, like OpenPocket.
