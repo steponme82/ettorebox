@@ -70,9 +70,7 @@ if (-not $exists) {
 }
 $hasMain = $exists -and ("$(git ls-remote --heads "https://github.com/$full.git" main)".Trim() -ne "")
 if ($hasMain) {
-  # core.autocrlf=false from the clone on: with Git for Windows' default (true) the files would be checked out with CRLF,
-  # then the config below makes them all "modified" and the history merge refuses ("local changes would be overwritten")
-  git -c core.autocrlf=false clone --quiet --branch main "https://github.com/$full.git" $repoDir
+  git clone --quiet --branch main "https://github.com/$full.git" $repoDir
   if ($LASTEXITCODE -ne 0) { Fail "git clone of https://github.com/$full" }
   Push-Location $repoDir
 } else {
@@ -85,7 +83,6 @@ if ($hasMain) {
 git config user.name "$Owner"
 git config user.email "$email"
 git config core.autocrlf false
-if ($hasMain) { git reset --quiet --hard HEAD }   # (the working files exactly as committed, whatever was checked out)
 # the history: the bundle's commits (each version's own commit messages), when the bundle is here
 $bundle = Join-Path $src "openpocket.bundle"
 $bundleOk = $false
@@ -134,15 +131,6 @@ if (-not $remoteTag -or -not $remoteTag.StartsWith($head)) {
   git tag -f -a $Tag -m "OpenPocket $Tag"
   git push --quiet origin $Tag
   if ($LASTEXITCODE -ne 0) { Write-Host "  (the tag $Tag could not be pushed)" -ForegroundColor Yellow }
-  # moving a tag turns its release (if there is one) into a draft on GitHub, and the list then shows an older one as Latest:
-  # published again here too, so that the source-only way leaves the release as it was
-  elseif ($remoteTag) {
-    gh release view $Tag --repo $full *> $null
-    if ($LASTEXITCODE -eq 0) {
-      gh release edit $Tag --repo $full --draft=false --tag $Tag --latest *> $null
-      if ($LASTEXITCODE -eq 0) { Write-Host "  release $Tag published again (moving its tag had made it a draft)" }
-    }
-  }
 }
 Pop-Location
 Write-Host "Source:      https://github.com/$full/tree/main   (tag $Tag)" -ForegroundColor Green
@@ -160,8 +148,7 @@ gh release view $Tag --repo $full *> $null
 if ($LASTEXITCODE -eq 0) {
   Step "The release $Tag exists: updating its files and notes"
   gh release upload $Tag @pk --repo $full --clobber
-  # moving the tag (above) turns its release into a draft on GitHub, and a draft cannot be "latest": published again here
-  if ($LASTEXITCODE -eq 0) { gh release edit $Tag --repo $full --draft=false --tag $Tag --notes-file $notes --latest }
+  gh release edit $Tag --repo $full --notes-file $notes --latest *> $null
 } else {
   Step "Creating the release $Tag"
   gh release create $Tag @pk --repo $full --latest --title "OpenPocket $Tag" --notes-file $notes
