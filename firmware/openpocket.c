@@ -1052,7 +1052,8 @@ static void app_main(void)
         px_midi_service();               /* USB-MIDI: Program / Control Change in, the pedal's own changes out */
         lights_update(&PRESET, ui_mode == M_TUNER, now);   /* the button lights follow the blocks */
 #if PX_OWN_FX
-        a_in_sync(now, &PRESET, px_scene_tone());   /* test build 53: the input the preset and the scene ask for, glided */
+        a_in_sync(now, &PRESET, px_scene_tone(), px_scene_in_db());   /* test build 53: the input the preset and the scene
+                                                                        * ask for, glided */
 #endif
         if (ui_mode != M_TUNER) {        /* DSP load in the status corner: "DSP 42%", "PEAK 150%" (bypassed), "SAFE 42%" */
             static uint32_t t_cpu;

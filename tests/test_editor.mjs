@@ -608,6 +608,11 @@ if (FX) {
     ok(t.rc === 0 && t.tones[1] === 2 && t.masks[1] === 1 << dly, "SCENE: scene 2's blocks set again: its tone kept");
     const bt = await ed.request(33, [5, 1, 10]);
     ok(bt[0] === 1 && (await ed.scenes()).tones[1] === 2, "SCENE: a tone past MUDDY is refused");
+    t = await ed.sceneStep(1, 5);
+    ok(t.rc === 0 && t.steps && t.steps[1] === 5 && t.tones[1] === 2 && t.saved.steps && t.saved.steps[1] === 0,
+       "SCENE: scene 2's INPUT step +9 DB over the patch, its tone kept; not saved yet (protocol 8)");
+    const bs = await ed.request(33, [6, 1, 8]);
+    ok(bs[0] === 1 && (await ed.scenes()).steps[1] === 5, "SCENE: a step past +15 DB is refused");
     const gt = cat.blocks[B_GATE].types[0], tx = gt.params[4].texts, tt = gt.params[3].texts;
     ok(gt.params.map((x) => x.name).join() === "THRESH,RELEASE,PRESET LVL,GTR TONE,INPUT" && tx && tx[0] === "SETTINGS" && tx[1] === "-10 DB" &&
        tx[11] === "0 DB" && tx[21] === "+10 DB" && tx[60] === "+10 DB" && tt && tt[0] === "SETTINGS" && tt[4] === "WARM" && tt[24] === "WARM",
@@ -623,8 +628,9 @@ if (FX) {
   ok(pl2.entries.length === 1 && pl2.entries[0].src === 32 && pl2.used === 2 && sc2.saved.set === sc.set && sc2.saved.masks[2] === 1 << dly,
      "SAVE into another slot takes the preset's own controls and its scenes along");
   ok(sc2.saved.names[2] === "CHO" && sc2.saved.names[0] === "A" && !(await ed.state()).dirty, "SAVE keeps the scenes' names (test build 50)");
-  if (ed.hasInputPerPreset) ok(sc2.saved.tones && sc2.saved.tones[1] === 2 && (await ed.state()).preset.p[B_GATE][4] === 14,
-                               "SAVE keeps scene 2's tone and the GT page's INPUT (test build 53)");
+  if (ed.hasInputPerPreset) ok(sc2.saved.tones && sc2.saved.tones[1] === 2 && sc2.saved.steps && sc2.saved.steps[1] === 5 &&
+                               (await ed.state()).preset.p[B_GATE][4] === 14,
+                               "SAVE keeps scene 2's tone and INPUT step, and the GT page's INPUT (test build 53)");
   await bleCheck(s);
   await s.end();
   // a power cycle: all of it read back from the flash

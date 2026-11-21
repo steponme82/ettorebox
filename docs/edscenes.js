@@ -9,7 +9,7 @@
 import { app, $, h, fill, on, blk, say } from "./edcore.js";
 import { setOn } from "./edsound.js";
 import { refreshState } from "./edpresets.js";
-import { cleanSceneName, TONES } from "./pxedit.js";
+import { cleanSceneName, TONES, SCENE_STEPS_DB } from "./pxedit.js";
 
 const N = 4;
 let sc = null;          // the pedal's scenes (pxedit.js scenes()), or null: none in this pedal (or not read yet)
@@ -86,6 +86,15 @@ function toneField(n) {
   s.value = String(sc.tones[n] | 0);
   return s;
 }
+// (test build 53) a scene's INPUT step over the patch's INPUT: "Patch" (none), or -6 .. +15 dB
+function stepField(n) {
+  const s = h("select", { class: "sc-tone", "aria-label": `Input level in scene ${n + 1}`,
+    title: "This scene's INPUT over the patch's (the GT page's INPUT, else the SETTINGS page's): a piezo scene, for example",
+    onchange: () => change(() => app.ed.sceneStep(n, +s.value)) },
+    SCENE_STEPS_DB.map((db, i) => h("option", { value: i, text: i ? `${db > 0 ? "+" : ""}${db} DB` : "Patch" })));
+  s.value = String(sc.steps[n] | 0);
+  return s;
+}
 function grid(order) {
   return h("div", { class: "sc-grid", id: "scgrid" },
     h("div", { class: "sc-wrap" }, h("table", {},
@@ -97,8 +106,10 @@ function grid(order) {
         Array.from({ length: N }, (_, n) => h("td", {}, h("input", { type: "checkbox", checked: !!((maskOf(n) >> b) & 1),
           "aria-label": `${blk(b).label} in scene ${n + 1}`, onchange: () => toggle(n, b) }))))),
         sc.tones && h("tr", { class: "sc-tonerow" }, h("th", { scope: "row", text: "TONE" }),
-          Array.from({ length: N }, (_, n) => h("td", {}, toneField(n))))))),
-    h("p", { class: "dim small", text: `The scene playing is the blocks as they are: switch one and the scene keeps it. Another scene's blocks are set here, and setting one stores it.${sc.names ? " A name of up to 3 characters shows on the pedal in place of SCENE n." : ""}${sc.tones ? " TONE: the scene's own guitar tone; Preset follows the preset's (its GT page, else SETTINGS)." : ""} Save the preset to keep its scenes; recalling a scene is not a change.` }),
+          Array.from({ length: N }, (_, n) => h("td", {}, toneField(n)))),
+        sc.steps && h("tr", { class: "sc-tonerow" }, h("th", { scope: "row", text: "INPUT" }),
+          Array.from({ length: N }, (_, n) => h("td", {}, stepField(n))))))),
+    h("p", { class: "dim small", text: `The scene playing is the blocks as they are: switch one and the scene keeps it. Another scene's blocks are set here, and setting one stores it.${sc.names ? " A name of up to 3 characters shows on the pedal in place of SCENE n." : ""}${sc.tones ? " TONE: the scene's own guitar tone; Preset follows the preset's (its GT page, else SETTINGS)." : ""}${sc.steps ? " INPUT: the scene's level over the patch's, for a quieter pickup (a piezo)." : ""} Save the preset to keep its scenes; recalling a scene is not a change.` }),
     h("div", { class: "sc-forget" }, Array.from({ length: N }, (_, n) => n).filter((n) => stored(n) && n !== sc.cur).map((n) =>
       h("button", { type: "button", class: "btn small", text: `Forget scene ${n + 1}`, title: "Not stored any more: recalled, it takes the blocks as they are",
         onclick: () => change(() => app.ed.sceneForget(n)) }))));

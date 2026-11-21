@@ -85,6 +85,10 @@ static uint32_t ed_ua_stat(uint32_t k) { return k ? 0u : ua_stat0; }
 #define PX_UI_NOTE() usb_note
 #endif
 #include "ui_text.h"
+#if PX_OWN_FX
+static float uis_pk;                                    /* test build 53: the guitar's peak at the converter, as the test plays */
+#define PX_IN_PEAK() uis_pk
+#endif
 #include "ui.h"
 
 static void shot(const char *dir, const char *name)
@@ -815,7 +819,7 @@ static int gt_input(const char *d)
     ui_home(); load_preset(9); cur_preset = 9; px_sc.set = 0; hold(0, 10); full();
     CHECK(PRESET.p[PX_B_GATE][PX_GT_TONE] == 0 && PRESET.p[PX_B_GATE][PX_GT_INPUT] == 0, "GT input: a factory preset has 0 in both: SETTINGS'");
     {
-        const px_in_t w = px_in_eff(&PRESET, 0);
+        const px_in_t w = px_in_eff(&PRESET, 0, 0);
         CHECK(w.inz == 1 && w.pickup == 0 && w.db == -10, "GT input: SETTINGS' own where the preset asks nothing");
     }
     ui_enter_block(PX_B_GATE); ui_item = 0; hold(0, 10); ui_render(); shot(d, "gt_input_page");
@@ -843,7 +847,7 @@ static int gt_input(const char *d)
     CHECK(PRESET.p[PX_B_GATE][PX_GT_INPUT] == 14, "GT input: 14 detents: +3 DB");
     hold(0, 10); ui_render(); shot(d, "gt_input_input_plus3");
     {
-        const px_in_t w = px_in_eff(&PRESET, 0);
+        const px_in_t w = px_in_eff(&PRESET, 0, 0);
         CHECK(w.inz == PX_INZ_ORDER[3] && w.pickup == 1 && w.db == 3, "GT input: the preset's WARM, HUMBUCK, +3 dB over SETTINGS'");
         char b[16];
         ui_gt_text((int)PX_GT_TONE, 0, b); CHECK(!strcmp(b, "SETTINGS"), "GT input: 0 reads SETTINGS");
@@ -855,8 +859,86 @@ static int gt_input(const char *d)
         CHECK(ft_width(&FT_MD, "SETTINGS") <= 230u - E_LIST_X && ft_width(&FT_MD, "HUMBUCK") <= 230u - E_LIST_X &&
               ft_width(&FT_SM, "GTR TONE") < E_LIST_X - BAR_X, "GT input: the texts fit their boxes");
     }
-    tap(UB_PUSH); hold(1u << UB_FX, 850); hold(0, 10); ui_render(); shot(d, "gt_input_not_for_a_controller");
-    CHECK(ui_mode == M_BLOCK && ul.note == UL_NOCTL && px_midi_pl_count(9) == 0, "GT input: hold FX on INPUT: not for a controller, nothing learned");
+    tap(UB_PUSH); ui_turn(-1, 0); ui_turn(-1, 0);                     /* (GTR TONE, selected) */
+    hold(1u << UB_FX, 850); hold(0, 10); ui_render(); shot(d, "gt_input_not_for_a_controller");
+    CHECK(ui_mode == M_BLOCK && ul.note == UL_NOCTL && px_midi_pl_count(9) == 0, "GT input: hold FX on GTR TONE: not for a controller, nothing learned");
+    ui_turn(1, 0); ui_turn(1, 0); hold(0, 2600);                       /* (INPUT again, the note gone) */
+    {   /* the input check, this patch's INPUT +3 DB: the footer says what to do */
+        char t[40]; uint16_t c = 0;
+        uis_pk = 0.0f; hold(0, 3100); ui_render();
+        CHECK(ui_learn_line(t, &c) && !strcmp(t, "PLAY HARD TO CHECK"), "input check: nothing played: PLAY HARD TO CHECK");
+        uis_pk = 0.05f; hold(0, 50); ui_render(); shot(d, "gt_input_check_low");
+        if (!(ui_learn_line(t, &c) && !strncmp(t, "LOW +13 DB", 10) && c == UI_ACC)) printf("(%s)\n", t);
+        CHECK(!strncmp(t, "LOW +13 DB", 10) && c == UI_ACC, "input check: peaks of 0.05 at +3 DB: LOW +13 DB, in amber");
+        uis_pk = 0.2f; hold(0, 50);
+        CHECK(ui_learn_line(t, &c) && !strncmp(t, "GOOD", 4) && c == GRN, "input check: 0.2: GOOD, in green");
+        uis_pk = 0.6f; hold(0, 50);
+        CHECK(ui_learn_line(t, &c) && !strncmp(t, "HOT -9 DB", 9), "input check: 0.6: HOT -9 DB");
+        CHECK(ft_width(&FT_SM, t) <= ST_X - 4u, "input check: the line fits the footer's box");
+        uis_pk = 0.98f; hold(0, 50); ui_render(); shot(d, "gt_input_check_clips");
+        CHECK(ui_learn_line(t, &c) && !strcmp(t, "CLIPS: GUITAR DOWN") && c == RED, "input check: the converter clips: the guitar's volume, in red");
+        uis_pk = 0.0f; hold(0, 3100);
+    }
+    {   /* hold FX on INPUT: the page; nothing set until PUSH */
+        hold(1u << UB_FX, 850); hold(0, 10); ui_render(); shot(d, "gt_input_check_listen");
+        CHECK(ui_mode == M_GAIN && ig.step == IG_LISTEN && !ig.from && !ig.scene, "input check: hold FX on INPUT: its page, PLAY HARD");
+        hold(0, 2000);
+        CHECK(ig.step == IG_LISTEN && !ig.t0, "input check: it waits for the first note");
+        uis_pk = 0.05f; hold(0, 1000); ui_render();
+        CHECK(ig.t0 && ig.step == IG_LISTEN, "input check: listening from the first note");
+        hold(0, 3100); ui_render(); shot(d, "gt_input_check_result_low");
+        CHECK(ig.step == IG_RESULT && ig.v == IC_LOW && ig.chg == 13 && PRESET.p[PX_B_GATE][PX_GT_INPUT] == 14,
+              "input check: after 4 s: LOW, +13 DB, nothing set yet");
+        tap(UB_PUSH); hold(0, 10); ui_render(); shot(d, "gt_input_check_set");
+        CHECK(ui_mode == M_BLOCK && ui_item == 3u + PX_GT_INPUT && PRESET.p[PX_B_GATE][PX_GT_INPUT] == 21 && ul.note == UL_INSET,
+              "input check: PUSH: the patch's INPUT to +10 DB (its end), back on the row, INPUT SET +10 DB");
+        uis_pk = 0.0f; hold(0, 3100);
+        hold(1u << UB_FX, 850); hold(0, 10); uis_pk = 0.6f; hold(0, 4200);
+        CHECK(ui_mode == M_GAIN && ig.step == IG_RESULT && ig.v == IC_HOT, "input check: 0.6 at +10 DB: HOT");
+        tap(UB_HOME); hold(0, 10);
+        CHECK(ui_mode == M_BLOCK && PRESET.p[PX_B_GATE][PX_GT_INPUT] == 21, "input check: HOME: nothing changed");
+        uis_pk = 0.0f; hold(0, 3100);
+        hold(1u << UB_FX, 850); hold(0, 15100); ui_render(); shot(d, "gt_input_check_nothing");
+        CHECK(ig.step == IG_RESULT && ig.v == IC_QUIET, "input check: 15 s of nothing: NOTHING HEARD");
+        tap(UB_PUSH); hold(0, 10);
+        CHECK(ui_mode == M_BLOCK && PRESET.p[PX_B_GATE][PX_GT_INPUT] == 21, "input check: PUSH there: back, nothing changed");
+    }
+    {   /* a scene playing: the knob picks the patch or the scene; the scene's step, a change until SAVE, which keeps it */
+        px_sc.set = 3u; px_sc.cur = 1; px_sc.mask[0] = px_sc.mask[1] = (uint16_t)sc_now(); px_si = 0;
+        px_sc_tab[9] = px_sc; px_si_put(9, 0);
+        hold(1u << UB_FX, 850); hold(0, 10);
+        CHECK(ui_mode == M_GAIN && ig.scene == 2, "input check: SCENE 2 playing: its page knows it");
+        uis_pk = 0.05f; hold(0, 4200); ui_render();
+        CHECK(ig.step == IG_RESULT && ig.v == IC_LOW && ig.chg == 6 && !ig.where, "input check: LOW +6, for the patch to begin with");
+        ui_turn(1, 0); hold(0, 10); ui_render(); shot(d, "gt_input_check_scene");
+        CHECK(ig.where == 1, "input check: the knob: this scene");
+        tap(UB_PUSH); hold(0, 10);
+        CHECK(ui_mode == M_BLOCK && px_si_step(px_si, 1) == 4 && px_scene_in_db() == 6 && PRESET.p[PX_B_GATE][PX_GT_INPUT] == 21 &&
+              px_si != px_si_get(9), "input check: SCENE 2 +6 DB over the patch, the patch as it was: a change until SAVE");
+        const px_in_t w = px_in_eff(&PRESET, px_scene_tone(), px_scene_in_db());
+        CHECK(w.db == 16, "input check: SCENE 2 plays at the patch's +10 and its +6: +16 DB");
+        uis_pk = 0.0f; hold(0, 3100);
+        ui_home(); hold(0, 10); hold(1u << UB_PUSH, 850); hold(0, 5); tap(UB_PUSH); hold(0, 10);
+        CHECK(px_si_get(9) == px_si && px_si_step(px_si_get(9), 1) == 4, "input check: SAVE keeps SCENE 2's step");
+        px_si = 0; px_si_put(9, 0); px_sc.set = 0; px_sc_tab[9].set = 0;
+        PRESET.p[PX_B_GATE][PX_GT_INPUT] = 14;
+    }
+    {   /* SETTINGS' INPUT: every preset on SETTINGS; hold FX there too; leaving saves it, as any change there */
+        ui_home(); hold(0, 10); px_in_db = -10;
+        midi_open(); while (mi_row != MI_INPUT) midi_push();
+        const int s0 = midi_saved;
+        uis_pk = 0.05f; hold(0, 50); midi_draw(); shot(d, "settings_input_check");
+        hold(1u << UB_FX, 850); hold(0, 10);
+        CHECK(ui_mode == M_GAIN && ig.from == 1, "input check: from SETTINGS' INPUT");
+        hold(0, 4200);
+        CHECK(ig.step == IG_RESULT && ig.v == IC_LOW, "input check: LOW from SETTINGS too");
+        tap(UB_PUSH); hold(0, 10);
+        CHECK(ui_mode == M_MIDI && mi_row == MI_INPUT && px_in_db == 10, "input check: SETTINGS' INPUT to +10 DB, back on its row");
+        midi_close();
+        CHECK(midi_saved == s0 + 1, "input check: leaving SETTINGS saves it");
+        px_in_db = -10; uis_pk = 0.0f; hold(0, 3100);
+        ui_enter_block(PX_B_GATE); ui_item = 0; hold(0, 10);
+    }
     px_cc_build();
     CHECK(px_cc_tab[36].kind == PXM_NONE && px_cc_tab[37].kind == PXM_NONE && px_cc_tab[35].kind == PXM_PARAM,
           "GT input: CC 36 and 37 are no Control Change; 35 (PRESET LVL) still is");
@@ -866,7 +948,7 @@ static int gt_input(const char *d)
         CHECK(px_scene_tone() == 0, "GT input: SCENE 1 has no tone of its own: the preset's");
         ui_scene_recall(1);
         CHECK(px_sc.cur == 1 && px_scene_tone() == 2, "GT input: SCENE 2's own tone");
-        const px_in_t w = px_in_eff(&PRESET, px_scene_tone());
+        const px_in_t w = px_in_eff(&PRESET, px_scene_tone(), px_scene_in_db());
         CHECK(w.inz == 0 && w.pickup == 1 && w.db == 3, "GT input: the scene's NATURAL over the preset's WARM; its PICKUP and INPUT stay");
         PRESET.on[PX_B_DELAY] ^= 1u;
         const uint32_t dl = PRESET.on[PX_B_DELAY];
@@ -876,7 +958,7 @@ static int gt_input(const char *d)
         hold(1u << UB_PUSH, 850); hold(0, 5); tap(UB_PUSH); hold(0, 10);
         CHECK(px_sc_tone(px_sc_tab[9].mask[1]) == 2 && px_sc_tab[9].cur == 1, "GT input: SAVE writes SCENE 2 with its tone");
     }
-    px_inz = 0; px_pickup = 0; px_in_db = 0; px_sc.set = 0; px_sc_tab[9].set = 0;
+    px_inz = 0; px_pickup = 0; px_in_db = 0; px_sc.set = 0; px_sc_tab[9].set = 0; px_si = 0; px_si_put(9, 0); uis_pk = 0.0f;
     load_preset(9); cur_preset = 9; ui_home(); hold(0, 10);
     return 0;
 }

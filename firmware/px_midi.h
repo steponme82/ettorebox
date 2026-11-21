@@ -179,6 +179,33 @@ static uint32_t px_scene_tone(void)                    /* the scene playing's ow
 {
     return (px_sc.set >> (px_sc.cur & 3u) & 1u) ? px_sc_tone(px_sc.mask[px_sc.cur & 3u]) : 0u;
 }
+/* test build 53: a scene's INPUT step over its patch's INPUT: 0 as the patch, 1..7 -6, -3, +3, +6, +9, +12, +15 dB (a hybrid
+ * guitar's piezo scene, +9 over its magnetic pickup's). Every preset's as saved, packed 3 bits a scene, preset i's 12 bits at bit
+ * 12 x i (px_store.h "OPSI"); the playing preset's as it plays, px_si (ui.h ui_dirty: EDITED; SAVE writes it) */
+#define PX_SI_BYTES ((52u * PX_SC_N * 3u + 7u) / 8u)   /* 78 */
+static uint8_t px_si_tab[PX_SI_BYTES];
+static uint16_t px_si;
+static const int8_t PX_SI_DB[8] = {0, -6, -3, 3, 6, 9, 12, 15};
+static __attribute__((noinline)) uint32_t px_si_get(uint32_t slot)              /* a preset's four, as saved */
+{
+    if (slot >= 52u) return 0;
+    const uint32_t b = slot * 12u, i = b >> 3;
+    return ((uint32_t)px_si_tab[i] | (uint32_t)px_si_tab[i + 1u] << 8) >> (b & 7u) & 0xFFFu;
+}
+static __attribute__((noinline)) void px_si_put(uint32_t slot, uint32_t v)
+{
+    if (slot >= 52u) return;
+    const uint32_t b = slot * 12u, i = b >> 3, sh = b & 7u;
+    uint32_t w = (uint32_t)px_si_tab[i] | (uint32_t)px_si_tab[i + 1u] << 8;
+    w = (w & ~(0xFFFu << sh)) | (v & 0xFFFu) << sh;
+    px_si_tab[i] = (uint8_t)w; px_si_tab[i + 1u] = (uint8_t)(w >> 8);
+}
+static uint32_t px_si_step(uint32_t v, uint32_t n) { return v >> (3u * (n & 3u)) & 7u; }
+static uint32_t px_si_with(uint32_t v, uint32_t n, uint32_t st) { return (v & ~(7u << (3u * (n & 3u)))) | (st & 7u) << (3u * (n & 3u)); }
+static int px_scene_in_db(void)                       /* the scene playing's INPUT step in dB, 0: none */
+{
+    return (px_sc.set >> (px_sc.cur & 3u) & 1u) ? PX_SI_DB[px_si_step(px_si, px_sc.cur)] : 0;
+}
 /* test build 53: the input the pedal plays with (px_audio.h a_in_sync): the GT page's GTR TONE, PICKUP and INPUT (engine/px_dsp.c
  * PN_GATE: setting 4 holds the tone + 10 x the pickup, setting 5 INPUT; 0 in each: SETTINGS' own), a scene's tone over the
  * preset's, SETTINGS' rows where the preset has none */
@@ -191,14 +218,19 @@ static uint32_t px_gt_tone(uint32_t v) { return v % 10u; }
 static uint32_t px_gt_pickup(uint32_t v) { v /= 10u; return v < PX_GT_NPICK ? v : PX_GT_NPICK - 1u; }
 static uint32_t px_gt_input(uint32_t v) { return v < PX_GT_NIN ? v : PX_GT_NIN - 1u; }
 typedef struct { uint8_t inz, pickup; int8_t db; } px_in_t;
-static px_in_t px_in_eff(const px_preset_t *p, uint32_t scene_tone)
+#define PX_IN_DB_LO (-16)                              /* (INPUT with a scene's step: -10 - 6 .. +10 + 15) */
+#define PX_IN_DB_HI 25
+static __attribute__((noinline)) px_in_t px_in_eff(const px_preset_t *p, uint32_t scene_tone, int scene_db)
 {
     const uint32_t k3 = p->p[PX_B_GATE][PX_GT_TONE], t = scene_tone ? scene_tone : px_gt_tone(k3), u = px_gt_pickup(k3);
     const uint32_t i = px_gt_input(p->p[PX_B_GATE][PX_GT_INPUT]);
     px_in_t r;
     r.inz = t ? PX_INZ_ORDER[t - 1u] : px_inz;
     r.pickup = (uint8_t)(u ? u - 1u : px_pickup);
-    r.db = (int8_t)(i ? (int)i - 1 + PX_IN_DB_MIN : px_in_db);
+    {
+        const int db = (i ? (int)i - 1 + PX_IN_DB_MIN : px_in_db) + scene_db;
+        r.db = (int8_t)(db < PX_IN_DB_LO ? PX_IN_DB_LO : db > PX_IN_DB_HI ? PX_IN_DB_HI : db);
+    }
     return r;
 }
 /* test build 51: SETTINGS' VOL PEDAL, where the expression pedal's volume acts, in every preset (engine px_exp_place): 0 right
@@ -219,7 +251,8 @@ static void px_midi_dual_sync(uint32_t slot);         /* (below: the engine told
 #define PX_SCN_LEN 3u
 static char px_scn[PX_SC_N][PX_SCN_LEN], px_scn_saved[PX_SC_N][PX_SCN_LEN];
 static void px_scn_load(uint32_t slot);                /* (px_store.h: the slot's, from the copy in use) */
-#define PX_SC_LOAD(i) (px_sc = px_sc_tab[(i) < 52u ? (i) : 0u], px_scn_load(i), px_midi_dual_sync(i))   /* (51: its pedal) */
+#define PX_SC_LOAD(i) (px_sc = px_sc_tab[(i) < 52u ? (i) : 0u], px_si = (uint16_t)px_si_get(i), px_scn_load(i), \
+                      px_midi_dual_sync(i))       /* (51: its pedal; 53: its scenes' INPUT steps) */
 static void px_scene_label(char *t, uint32_t n, int narrow)   /* scene n's name, else "SCENE 2" ("SC 2" where narrow) */
 {
     uint32_t i = 0;

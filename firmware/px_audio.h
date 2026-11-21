@@ -121,9 +121,9 @@ static void a_inz_set(const float *c)                  /* (the interrupt reads t
     for (int i = 0; i < 5; i++) a_inz_c[i] = c[i];
     if (a_running) fm1_irq_unmask(FM1_IRQ_ALNK0);
 }
-static void a_in_sync(uint32_t now, const px_preset_t *p, uint32_t scene_tone)
+static void a_in_sync(uint32_t now, const px_preset_t *p, uint32_t scene_tone, int scene_db)
 {
-    const px_in_t w = px_in_eff(p, scene_tone);
+    const px_in_t w = px_in_eff(p, scene_tone, scene_db);
     if (a_ins.look || w.inz != a_ins.at.inz || w.pickup != a_ins.at.pickup || w.db != a_ins.at.db) {
         float c[5];
         const int on = px_inz_coefs(g_eng.sr, w.inz, w.pickup, c);
@@ -156,6 +156,12 @@ static volatile uint32_t a_en_s[5];                    /* the entries by the fla
 static int32_t a_res[A_FR];                            /* output, 24-bit right-aligned */
 #endif
 static volatile float a_lvl[2];                        /* input L / R: mean square, in 24-bit steps */
+#if PX_OWN_FX
+/* test build 53: the guitar's loudest at the converter since the main loop last looked, in 24-bit steps: the input check's
+ * (ui.h), which judges the level the chain gets from it and INPUT */
+static volatile float a_ipk;
+static float a_in_peak_take(void) { const float p = a_ipk * (1.0f / 8388608.0f); a_ipk = 0.0f; return p; }
+#endif
 /* input level in dB below full scale (dBFS), rounded; -199 = digital silence */
 static int a_level_db(int ch)
 {
@@ -845,17 +851,24 @@ static void a_block(const uint8_t *data, int len)      /* a guitar block: its DS
     uint32_t n = (uint32_t)len / 8u;                   /* 2 32-bit words per frame */
     if (n > A_FR) n = A_FR;
     float sl = 0.0f, sr = 0.0f;
+#if PX_OWN_FX
+    float pk = 0.0f;                                   /* (test build 53: the block's loudest, for the input check) */
+#endif
     for (uint32_t i = 0; i < n; i++) {
         float l = (float)((int32_t)(s[2u * i] << 8) >> 8), r = (float)((int32_t)(s[2u * i + 1u] << 8) >> 8);
         sl += l * l; sr += r * r;
 #if PX_OWN_FX
         a_in[i] = l * a_in_k;                          /* (test build 39: x0.5 and INPUT, -10..+10 dB) */
+        pk = l > pk ? l : -l > pk ? -l : pk;
 #else
         a_in[i] = l * (0.5f / 8388608.0f);             /* guitar = L channel only (like the official fw); R carries
                                                           only noise (~ -77 dBFS, measured v26). x0.5: same level
                                                           as the old (L + R) / 2, settings are unchanged */
 #endif
     }
+#if PX_OWN_FX
+    if (pk > a_ipk) a_ipk = pk;
+#endif
 #if PX_OWN_FX
     if (a_inz_on) {                                    /* (test build 46: IN-Z, the pickup loaded) */
         float z1 = a_inz_z[0], z2 = a_inz_z[1];

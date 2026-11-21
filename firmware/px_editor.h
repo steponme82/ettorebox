@@ -175,7 +175,7 @@ static uint32_t ed_state_hash(void)
 static int ed_more_bad(uint32_t t, uint32_t v) { return (t & 15u) >= PX_INZ_N || ((t >> 4) & 3u) > 2u || t > 0x3Fu || (v & 3u) > 2u || v > 31u; }
 /* test build 53: the GT page's GTR TONE + PICKUP (setting 4: the tone's name, "SETTINGS" at 0; the web editor splits the two) and
  * INPUT (setting 5: "SETTINGS", "-10 DB" .. "+10 DB"), the rest as the engine says */
-static int ed_param_text(uint32_t b, uint32_t t, uint32_t k, uint32_t v, char *s)
+static __attribute__((noinline)) int ed_param_text(uint32_t b, uint32_t t, uint32_t k, uint32_t v, char *s)
 {
     if (b == PX_B_GATE && (k == PX_GT_TONE || k == PX_GT_INPUT)) {
         const uint32_t i = k == PX_GT_TONE ? px_gt_tone(v) : px_gt_input(v);
@@ -364,6 +364,7 @@ static void ed_handle(const uint8_t *a, uint32_t n)   /* a: the args, after the 
 #if PX_OWN_FX
         if (a[0] != cur_preset) (void)px_midi_pl_copy(cur_preset, a[0]);   /* (test build 46: its learned controls go with it) */
         sc_fold(); px_sc_tab[a[0]] = px_sc;            /* (test build 49: and its scenes) */
+        px_si_put(a[0], px_si);                        /* (test build 53: and their INPUT steps) */
 #endif
         rc = st_save(a[0], &PRESET) ? 2 : 0;
         if (!rc) cur_preset = a[0];
@@ -553,7 +554,8 @@ static void ed_handle(const uint8_t *a, uint32_t n)   /* a: the args, after the 
                                                         * blocks; the scene playing switches them); 3, n (forget); test build 50:
                                                         * 4, n, c0, c1, c2 (scene n's name, 0-padded); test build 53: 5, n, tone
                                                         * (scene n's GUITAR TONE, 0 the preset's, 1..9; a scene not stored is
-                                                        * stored as things are). SAVE keeps them */
+                                                        * stored as things are), 6, n, step (scene n's INPUT step over the patch:
+                                                        * 0 none, 1..7 -6, -3, +3, +6, +9, +12, +15 dB). SAVE keeps them */
         rc = 0;
         if (n) {
             const uint32_t sn = n >= 2u ? a[1] : PX_SC_N;
@@ -564,9 +566,10 @@ static void ed_handle(const uint8_t *a, uint32_t n)   /* a: the args, after the 
                 px_sc.mask[sn] = (uint16_t)(tn | a[2] | (uint32_t)a[3] << 7); px_sc.set |= (uint8_t)(1u << sn);
                 if (sn == px_sc.cur) for (k = 0; k < PX_NBLK; k++) PRESET.on[k] = (uint8_t)(px_sc.mask[sn] >> k & 1u);
             } else if (a[0] == 3u) px_sc.set &= (uint8_t)~(1u << sn);
-            else if (a[0] == 5u && n >= 3u && a[2] <= PX_INZ_N) {   /* (test build 53) */
+            else if ((a[0] == 5u && n >= 3u && a[2] <= PX_INZ_N) || (a[0] == 6u && n >= 3u && a[2] < 8u)) {   /* (test build 53) */
                 if (!(px_sc.set >> sn & 1u)) { px_sc.mask[sn] = (uint16_t)sc_now(); px_sc.set |= (uint8_t)(1u << sn); }
-                px_sc.mask[sn] = (uint16_t)((px_sc.mask[sn] & PX_SC_BLOCKS) | (uint32_t)a[2] << PX_SC_TONE_SH);
+                if (a[0] == 5u) px_sc.mask[sn] = (uint16_t)((px_sc.mask[sn] & PX_SC_BLOCKS) | (uint32_t)a[2] << PX_SC_TONE_SH);
+                else px_si = (uint16_t)px_si_with(px_si, sn, a[2]);
             }
             else if (a[0] == 4u && n >= 2u + PX_SCN_LEN && ed_scn_ok(a + 2)) memcpy(px_scn[sn], a + 2, PX_SCN_LEN);   /* (a change
                                                                                                      * until SAVE: ui_dirty) */
@@ -577,6 +580,8 @@ static void ed_handle(const uint8_t *a, uint32_t n)   /* a: the args, after the 
                                                         * so its editor reads on) */
         for (k = 0; k < PX_SC_N; k++) ed_b(px_sc_tone(px_sc.mask[k]));   /* (test build 53: the tones, as they play and as saved) */
         for (k = 0; k < PX_SC_N; k++) ed_b(px_sc_tone(px_sc_tab[cur_preset < 52u ? cur_preset : 0u].mask[k]));
+        for (k = 0; k < PX_SC_N; k++) ed_b(px_si_step(px_si, k));   /* (the INPUT steps, as they play and as saved) */
+        for (k = 0; k < PX_SC_N; k++) ed_b(px_si_step(px_si_get(cur_preset), k));
         break;
 #endif
 #ifdef ED_DIAG_LINES

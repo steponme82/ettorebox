@@ -61,7 +61,8 @@ and what to check on each.
    BOOST, WAH, TAPE FLUTE. SHIMMER in tune, BARITONE sooner, MONO SYNTH's tracker, SITAR and STRINGS rebuilt, 12-STRING
    steady.
 9. GUITAR TONE: the input loads the pickup as a real amp's would, named by its sound (BRIGHT to MUDDY). Each preset can have
-   its own, with its PICKUP and its INPUT level, on the GT page, and each scene its own tone.
+   its own, with its PICKUP and its INPUT level, on the GT page, and each scene its own tone and INPUT step. An input check
+   tells you when your level is low or hot for the sound, and sets it from a few seconds of playing.
 10. Stereo output (the delay, the reverb and the modulations spread, or the guitar left and LOW OCTAVE's bass right), and
     USB audio with its own routing (record the DI or the pedal, send the computer's sound back anywhere in the chain).
 11. Tap tempo (CC 116), next and previous preset (CC 118 and 119), the expression pedal (CC 117), and a SETTINGS page

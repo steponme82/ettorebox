@@ -527,6 +527,33 @@ int main(void)
             memset(px_sc_tab, 0, sizeof px_sc_tab); px_live = 0; px_sc_rule = 0; px_sc_feet = 0;
             CHECK(st_commit() == 0, "scenes: cleared again");
         }
+        {   /* test build 53: the scenes' INPUT steps ("OPSI", after the names), 3 bits a scene: kept through a power cycle,
+             * a slot reset to its factory sound loses its own, a record whose CRC fails is none, a copy without it (builds
+             * before 53) none; the bits of one preset never touch its neighbours' */
+            memset(px_si_tab, 0, sizeof px_si_tab);
+            px_si_put(0, 0xFFFu); px_si_put(1, 0x123u); px_si_put(51, 0xABCu);
+            CHECK(px_si_get(0) == 0xFFFu && px_si_get(1) == 0x123u && px_si_get(2) == 0u && px_si_get(50) == 0u && px_si_get(51) == 0xABCu,
+                  "scene steps: 12 bits a preset, side by side, none touching another");
+            CHECK(px_si_step(0x123u, 0) == 3u && px_si_step(0x123u, 1) == 4u && px_si_step(0x123u, 2) == 4u && px_si_step(0x123u, 3) == 0u && px_si_step(px_si_with(0, 3, 7), 3) == 7u,
+                  "scene steps: 3 bits a scene");
+            CHECK(st_commit() == 0, "scene steps: a commit");
+            memset(px_si_tab, 0, sizeof px_si_tab);
+            reboot();
+            CHECK(px_si_get(0) == 0xFFFu && px_si_get(1) == 0x123u && px_si_get(51) == 0xABCu, "scene steps: they survive a power cycle");
+            CHECK(st_reset(1) == 0, "scene steps: slot 1 back to its factory sound");
+            reboot();
+            CHECK(px_si_get(1) == 0u && px_si_get(0) == 0xFFFu && px_si_get(51) == 0xABCu, "scene steps: its slot reset, its steps go; the others stay");
+            nor[st_cur + ST_SI_OFF + 4u] ^= 0x01;
+            reboot();
+            CHECK(px_si_get(0) == 0u && px_si_get(51) == 0u && px_midi_map_count() == 2, "scene steps: a record whose CRC fails: none, the rest kept");
+            nor[st_cur + ST_SI_OFF + 4u] ^= 0x01;
+            memset(nor + st_cur + ST_SI_OFF, 0xFF, ST_SI_LEN);
+            reboot();
+            CHECK(px_si_get(51) == 0u, "scene steps: a copy without the record (builds before 53): none");
+            CHECK(ST_SI_OFF + ST_SI_LEN <= 0xF00u + 0x1000u, "scene steps: the record ends under the loader's area (0x1F00)");
+            memset(px_si_tab, 0, sizeof px_si_tab);
+            CHECK(st_commit() == 0, "scene steps: cleared again");
+        }
         {   /* test build 50: the scenes' names ("OPN1" presets 1-26, "OPN2" 27-52): a save writes the playing preset's, the
              * others go over untouched, a commit that is no save changes none, a FACTORY reset drops its own; a record whose
              * CRC fails: none in its half, the other kept; a copy without them (builds before 50): none; what is no letter: 0 */

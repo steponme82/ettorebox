@@ -150,6 +150,30 @@ static void px_scn_load(uint32_t slot)                 /* the playing preset's n
     }
     memcpy(px_scn_saved, px_scn, sizeof px_scn);
 }
+/* test build 53: the scenes' INPUT steps (px_midi.h px_si_tab), after the names: "OPSI", 52 presets x 4 scenes x 3 bits (78
+ * bytes), the CRC, 2 spare: 86 of the 104 bytes left under 0x1F00. A copy without it (other firmware, builds before 53): every
+ * scene as its patch */
+#define ST_SI_OFF (ST_SN_OFF + 2u * ST_SN_LEN)          /* 0x1E98 */
+#define ST_SI_LEN (4u + PX_SI_BYTES + 4u)               /* 86 */
+#define ST_SI_MAGIC 0x4953504Fu                         /* "OPSI" */
+typedef char st_si_check[(ST_SI_OFF + ST_SI_LEN <= 0x1F00u && ST_SI_LEN <= sizeof st_pl_buf) ? 1 : -1];
+static void st_si_pack(uint8_t *b)
+{
+    const uint32_t T = 4u + PX_SI_BYTES, c = ota_crc16(px_si_tab, PX_SI_BYTES, 0);
+    b[0] = 'O'; b[1] = 'P'; b[2] = 'S'; b[3] = 'I';
+    memcpy(b + 4, px_si_tab, PX_SI_BYTES);
+    b[T] = (uint8_t)c; b[T + 1u] = (uint8_t)(c >> 8); b[T + 2u] = b[T + 3u] = 0xFFu;
+}
+static void st_si_load(uint32_t base)                  /* the copy's steps, or none */
+{
+    uint8_t *const b = st_pl_buf;
+    const uint32_t T = 4u + PX_SI_BYTES;
+    memset(px_si_tab, 0, sizeof px_si_tab);
+    if (!base || ota_fread(base + ST_SI_OFF, b, ST_SI_LEN)) return;
+    if ((b[0] | b[1] << 8 | b[2] << 16 | (uint32_t)b[3] << 24) != ST_SI_MAGIC) return;
+    if ((b[T] | b[T + 1u] << 8) != (ota_crc16(b + 4, PX_SI_BYTES, 0) & 0xFFFFu)) return;
+    memcpy(px_si_tab, b + 4, PX_SI_BYTES);
+}
 static void st_sc_load(uint32_t base)                  /* the copy's scenes, or none */
 {
     uint8_t *const b = st_pl_buf;
@@ -310,6 +334,7 @@ static void st_load(void)
     st_pl_load(best);                               /* test build 46: and each preset's own */
     st_sc_load(best);                               /* test build 49: and their scenes */
     st_sn_ok = (uint8_t)(st_sn_valid(best, 0u) | st_sn_valid(best, 1u) << 1);   /* test build 50: their names' records */
+    st_si_load(best);                               /* test build 53: their INPUT steps */
 #endif
     if (best && bh.ver < 3u) st_types_v34();        /* saved before v34: the old amp / drive / cab numbers */
     if (best && bh.ver < 4u) st_time_v35();         /* saved before v35: delay TIME on the 1 s scale */
@@ -384,6 +409,7 @@ static int st_commit(void)
     if (!rc) rc = st_rec_write(base + ST_SC_OFF, st_sc_pack, ST_SC_LEN);   /* test build 49: their scenes */
     if (!rc) rc = st_rec_write(base + ST_SN_OFF, st_sn_pack0, ST_SN_LEN);   /* test build 50: the scenes' names */
     if (!rc) rc = st_rec_write(base + ST_SN_OFF + ST_SN_LEN, st_sn_pack1, ST_SN_LEN);
+    if (!rc) rc = st_rec_write(base + ST_SI_OFF, st_si_pack, ST_SI_LEN);   /* test build 53: the scenes' INPUT steps */
     st_sn_put = st_sn_drop = 0xFFu;
 #endif
     if (!rc && fl_write(base + 16u, st_slot[0], ST_S0N * ST_SLOT)) rc = -3;   /* sector 0's slots: st_slot's rows are contiguous */
@@ -429,6 +455,7 @@ static int st_reset(uint32_t k)
     px_midi_pl_drop_slot(k);                      /* test build 46: its own learned controls go with its sound */
     memset(&px_sc_tab[k], 0, sizeof px_sc_tab[k]);   /* test build 49: and its scenes */
     st_sn_drop = (uint8_t)k;                      /* test build 50: and their names */
+    px_si_put(k, 0);                              /* test build 53: and their INPUT steps */
 #endif
     return st_commit();
 }

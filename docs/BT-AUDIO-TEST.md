@@ -1651,8 +1651,11 @@ Build 52 with what a gig asked for: GUITAR TONE "a game changer", wanted per gui
 (-10 dB suits weak pickups, a passive piezo then sounds cold). The GT page is now the preset's input: after THRESH, RELEASE and
 PRESET LVL come **GTR TONE**, **PICKUP** and **INPUT**, each SETTINGS (the SETTINGS page's own row) or a value of this preset's.
 Each scene can have a tone of its own, set in the web editor's scenes grid (TONE). Which wins: the scene, the preset, SETTINGS.
-A change glides in 24 ms. The details: [MIDI.md](MIDI.md), "The preset's input on the GT page, and a scene's tone". Also: the
-installer and editor pages no longer zoom (pinch or double tap), as the RC-10R app.
+A change glides in 24 ms. A scene can also have an INPUT step over its patch's (a piezo's +9 dB). And the **input check**: on
+the INPUT rows (GT's and SETTINGS'), the pedal says LOW, GOOD or HOT against the level the amps and drives were voiced for, and
+which blocks of the preset the level changes; holding FX there sets it from 4 seconds of playing, for the patch, a scene or
+SETTINGS. The details: [MIDI.md](MIDI.md), "The preset's input on the GT page, and a scene's tone". Also: the installer and
+editor pages no longer zoom (pinch or double tap), as the RC-10R app.
 
 ### What to check
 
@@ -1661,8 +1664,10 @@ installer and editor pages no longer zoom (pinch or double tap), as the RC-10R a
    sound), back: the preset's again.
 3. In the editor, a scene's TONE on NATURAL in a preset on MUDDY: recall the scene, the tone opens up; another scene, back to
    MUDDY. No click either way.
-4. Hold FX on GTR TONE, PICKUP or INPUT: `NOT FOR A CONTROLLER`, nothing learned.
-5. MONO SYNTH with INPUT at 0 dB or more (its tracker's gate is a fixed level: at -10 dB notes start late and drop out).
+4. Hold FX on GTR TONE or PICKUP: `NOT FOR A CONTROLLER`, nothing learned.
+5. The input check: on GT's INPUT row play hard, the bottom line says LOW, GOOD or HOT; hold FX on INPUT, play 4 seconds,
+   PUSH: INPUT set. Again with a scene playing, the knob on THIS SCENE: its step. And SETTINGS' INPUT row the same way.
+6. MONO SYNTH after the input check on its preset (it aims 4 dB higher there: the tracker's gate is a fixed level).
 
 ## Checked on a computer
 
@@ -1726,7 +1731,11 @@ installer and editor pages no longer zoom (pinch or double tap), as the RC-10R a
 - Test build 53, the preset's input: `tests/uisim.c` `gt_input` (the GT page's six rows drawn above the footer, a factory preset
   on SETTINGS in all three, GTR TONE and PICKUP one item a detent and stopping at their ends, one setting holding both, INPUT
   in dB, every text within its box, NOT FOR A CONTROLLER, CC 36 and 37 none and 35 still PRESET LVL, a scene's tone over the
-  preset's with the preset's PICKUP and INPUT kept, the scene keeping its tone when it stores its blocks, SAVE keeping it);
+  preset's with the preset's PICKUP and INPUT kept, the scene keeping its tone when it stores its blocks, SAVE keeping it;
+  the input check on played peaks: PLAY HARD, LOW +13, GOOD, HOT -9, CLIPS, the line within its box, the page's wait, 4 s of
+  listening, PUSH setting the patch's INPUT to its end, HOME and nothing heard leaving it, a scene's step chosen by the knob,
+  SAVE keeping it, SETTINGS' INPUT set and saved on leaving); `tests/test_store.c` (the scenes' INPUT steps' record: 12 bits
+  a preset none touching another, a power cycle, a factory reset, a failed CRC, a copy without it);
   `tests/test_editor.mjs` (editor protocol 8: a scene's tone set, kept when its blocks are set, one past MUDDY refused, the
   masks the blocks alone, the GT catalogue's names and texts, SET on GT's 4th and 5th, no controller learned there, SAVE
   keeping the tone and INPUT); `tests/test_store.c` (the filter given the tone and the pickup). The release image is v42's byte

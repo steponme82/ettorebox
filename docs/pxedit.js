@@ -23,6 +23,8 @@ export const GT_TONE_K = 3, GT_INPUT_K = 4;
 export const gtTone = (v) => (v | 0) % 10;
 export const gtPickup = (v) => Math.min(3, Math.floor((v | 0) / 10));
 export const gtPack = (tone, pickup) => (tone | 0) + 10 * (pickup | 0);
+// a scene's INPUT step over its patch's INPUT: 0 none, then these dB (firmware/px_midi.h PX_SI_DB)
+export const SCENE_STEPS_DB = [0, -6, -3, 3, 6, 9, 12, 15];
 export const P_SIZE = 110;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function fail(code, msg) { const e = new Error(msg); e.code = code; return e; }
@@ -387,7 +389,8 @@ export class Editor {
   // flash: SAVE keeps them with the sound, as on the pedal.
   // -> { rc (0 ok, 1 invalid), cur (the scene playing), set (the scenes stored, a bit each), masks [4], names [4] (test build
   //    50: each scene's name, up to 3 characters, "" none; null from a pedal before it), tones [4] (protocol 8: each scene's
-  //    GUITAR TONE, 0 the preset's, 1..9 in the pedal's knob order; null before it), saved: { cur, set, masks, names, tones } (as
+  //    GUITAR TONE, 0 the preset's, 1..9 in the pedal's knob order; null before it), steps [4] (each scene's INPUT step over the
+  //    patch's, 0..7: SCENE_STEPS_DB), saved: { cur, set, masks, names, tones, steps } (as
   //    saved with the preset) }
   get hasScenes() { return !!(this.info && this.info.proto >= 6); }
   _sc(r) {
@@ -399,9 +402,9 @@ export class Editor {
       return Array.from({ length: 4 }, () => { const b = [q.b(), q.b(), q.b()], z = b.indexOf(0); return String.fromCharCode(...(z < 0 ? b : b.slice(0, z))); });
     };
     const nn = names(), sn = nn && names();
-    const tones = () => (q.i + 4 > q.a.length ? null : [q.b(), q.b(), q.b(), q.b()]);   // (protocol 8: after the names)
-    const tn = nn && tones(), ts = tn && tones();
-    return { rc, ...now, names: nn, tones: tn, saved: { ...saved, names: sn, tones: ts } };
+    const four = () => (q.i + 4 > q.a.length ? null : [q.b(), q.b(), q.b(), q.b()]);   // (protocol 8: after the names)
+    const tn = nn && four(), ts = tn && four(), st = ts && four(), ss = st && four();   // (the tones, then the INPUT steps)
+    return { rc, ...now, names: nn, tones: tn, steps: st, saved: { ...saved, names: sn, tones: ts, steps: ss } };
   }
   async scenes() { return this._sc(await this.request(C.SCENE)); }
   async sceneRecall(n) { return this._sc(await this.request(C.SCENE, [1, n])); }          // (as CC 65 + n)
@@ -416,6 +419,8 @@ export class Editor {
   // protocol 8: scene n's own GUITAR TONE (0: the preset's, 1..9: BRIGHT, NATURAL, SMOOTH, WARM, WARMER, PUNCHY, DARK, DARKER,
   // MUDDY); a scene not stored is stored as things are. A change until SAVE
   async sceneTone(n, tone) { return this._sc(await this.request(C.SCENE, [5, n, Math.max(0, Math.min(9, tone | 0))])); }
+  // protocol 8: scene n's INPUT step over the patch's INPUT (0 none, 1..7: SCENE_STEPS_DB); a change until SAVE
+  async sceneStep(n, step) { return this._sc(await this.request(C.SCENE, [6, n, Math.max(0, Math.min(7, step | 0))])); }
   async irTexts() {
     const b = this.cat.blocks.findIndex((x) => x.label === "CAB");
     const t = b < 0 ? -1 : this.cat.blocks[b].types.findIndex((x) => x && x.name === "USER IR");
