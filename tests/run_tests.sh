@@ -46,6 +46,8 @@
 #    on and off (tests/engine/exp.c, tests/midiio.c), the guided learn's step 5, the line at the screen's edge, VOL PEDAL
 #    (tests/uisim.c), their bits in the store (tests/test_store.c), the volume AT INPUT or BEFORE DLY (tests/engine/exp.c,
 #    tests/engine/bassout.c)
+#    Test build 53: the GT page's GTR TONE, PICKUP and INPUT, a scene's tone, CC 36 and 37 none (tests/uisim.c gt_input), the
+#    scenes' tones and the GT catalogue over editor protocol 8 (tests/test_editor.mjs)
 #  - preset store: save / reload / power cut at every step of a save (firmware/px_store.h on a simulated flash)
 #  - the audio callbacks' order (v42, firmware/px_aorder.h): the I2S driver calls the output's callback before the
 #    input's when its interrupt enters late; every output block must still be the sound of that interrupt's guitar block

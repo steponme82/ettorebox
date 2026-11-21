@@ -93,22 +93,58 @@ static volatile uint8_t a_res_sp;
 #if PX_OWN_FX
 /* test build 39: INPUT (px_midi.h px_in_db) as the input's scale: the interrupt reads one float, set from the main loop */
 static volatile float a_in_k = 0.5f / 8388608.0f;
-static void a_in_gain_apply(void) { a_in_k = (0.5f / 8388608.0f) * powf(10.0f, (float)px_in_db * 0.05f); }
 static void a_tails_apply(void) { px_engine_tails(&g_eng, px_tails); }   /* test build 40: TAILS (px_midi.h) */
 /* test build 46: IN-Z (px_midi.h px_inz, px_pickup, px_inz_coefs: the pickup loaded as an input of that impedance would load
  * it), one biquad over the input after INPUT. Off (1M): nothing done to the input, bit for bit */
 static volatile uint8_t a_inz_on;
 static float a_inz_c[5], a_inz_z[2];                   /* b0 b1 b2 a1 a2; the state (the interrupt's own) */
 static int a_running;                                  /* (defined below: the audio interrupt is on) */
-static void a_inz_apply(void)                          /* (the main loop: SETTINGS, the store at boot) */
+/* test build 53: the input the preset and the scene playing ask for (px_midi.h px_in_eff: the GT page's GTR TONE, PICKUP and
+ * INPUT, a scene's tone), SETTINGS' rows where they ask nothing. a_in_sync, every main-loop pass, looks for a change and glides
+ * to it in A_IN_GLIDE ms: the gain, and the filter's five coefficients in a straight line from the old set to the new (between
+ * two stable biquads the line stays stable: the stable (a1, a2) make a triangle), from or to no filter (1, 0, 0, 0, 0), which
+ * switches it off at the end. The interrupt reads what it always read. SETTINGS, the editor and the store at boot only ask for
+ * a look (a_in_gain_apply, a_inz_apply) */
+#define A_IN_GLIDE 24u
+static const float A_IN_ID[5] = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+static struct {
+    px_in_t at;                                        /* (the input glided to, or gliding to) */
+    uint8_t look, gliding, off_end;
+    uint32_t t0;
+    float k0, k1, c0[5], c1[5];
+} a_ins = {{0xFFu, 0xFFu, 0x7F}, 1u, 0u, 0u, 0u, 0.0f, 0.0f, {0}, {0}};
+static void a_in_gain_apply(void) { a_ins.look = 1; }
+static void a_inz_apply(void) { a_ins.look = 1; }
+static void a_inz_set(const float *c)                  /* (the interrupt reads the five as one set; at boot it is not on yet) */
 {
-    float c[5];
-    if (!px_inz_coefs(g_eng.sr, c)) { a_inz_on = 0; return; }
-    if (a_running) fm1_irq_mask(FM1_IRQ_ALNK0);         /* (the interrupt reads the five as one set; at boot it is not on yet) */
+    if (a_running) fm1_irq_mask(FM1_IRQ_ALNK0);
     for (int i = 0; i < 5; i++) a_inz_c[i] = c[i];
-    if (!a_inz_on) a_inz_z[0] = a_inz_z[1] = 0.0f;
-    a_inz_on = 1;
     if (a_running) fm1_irq_unmask(FM1_IRQ_ALNK0);
+}
+static void a_in_sync(uint32_t now, const px_preset_t *p, uint32_t scene_tone)
+{
+    const px_in_t w = px_in_eff(p, scene_tone);
+    if (a_ins.look || w.inz != a_ins.at.inz || w.pickup != a_ins.at.pickup || w.db != a_ins.at.db) {
+        float c[5];
+        const int on = px_inz_coefs(g_eng.sr, w.inz, w.pickup, c);
+        a_ins.look = 0;
+        a_ins.k0 = a_in_k; a_ins.k1 = (0.5f / 8388608.0f) * powf(10.0f, (float)w.db * 0.05f);
+        for (int i = 0; i < 5; i++) { a_ins.c0[i] = a_inz_on ? a_inz_c[i] : A_IN_ID[i]; a_ins.c1[i] = on ? c[i] : A_IN_ID[i]; }
+        if (on && !a_inz_on) { a_inz_set(A_IN_ID); a_inz_z[0] = a_inz_z[1] = 0.0f; a_inz_on = 1; }   /* (from no filter) */
+        a_ins.off_end = (uint8_t)!on;
+        a_ins.at = w; a_ins.gliding = 1;
+        a_ins.t0 = a_running ? now : now - A_IN_GLIDE;  /* (at boot: at once) */
+    }
+    if (!a_ins.gliding) return;
+    const uint32_t e = now - a_ins.t0;
+    const float f = e >= A_IN_GLIDE ? 1.0f : (float)e * (1.0f / (float)A_IN_GLIDE);
+    a_in_k = a_ins.k0 + (a_ins.k1 - a_ins.k0) * f;
+    if (a_inz_on) {
+        float c[5];
+        for (int i = 0; i < 5; i++) c[i] = a_ins.c0[i] + (a_ins.c1[i] - a_ins.c0[i]) * f;
+        a_inz_set(c);
+    }
+    if (f >= 1.0f) { a_ins.gliding = 0; if (a_ins.off_end) a_inz_on = 0; }
 }
 #endif
 #if OP_BT_AUDIO

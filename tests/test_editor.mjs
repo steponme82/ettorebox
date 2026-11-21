@@ -129,7 +129,7 @@ let s = sim(["--dump", flash1]);
 await s.ready;
 let ed = new Editor(s.access);
 const info = await ed.connect();
-ok(info && info.proto === (FX ? 7 : 4) && info.version === (FX ? "v39 FX7" : "v39") && info.identity === "PocketX_939", `INFO: ${info && `${info.version} ${info.identity}`}`);
+ok(info && info.proto === (FX ? 8 : 4) && info.version === (FX ? "v39 FX8" : "v39") && info.identity === "PocketX_939", `INFO: ${info && `${info.version} ${info.identity}`}`);
 ok(info && info.nblk === 12 && info.npar === 5 && info.nslot === 52 && info.nameMax === 13, "INFO: 12 blocks, 5 parameters, 52 slots, names of 13");
 const t0 = Date.now();
 const cat = await ed.catalog();
@@ -462,7 +462,8 @@ if (FX) {
   ed = new Editor(s.access);
   const inf = await ed.connect();
   const eq = cat.blocks.findIndex((b) => b.label === "EQ"), dly = cat.blocks.findIndex((b) => b.label === "DLY");
-  ok(inf.proto === 7 && ed.hasPresetLearn && ed.hasScenes, "protocol 6 (7 since test build 51): a preset's own controls, scenes, MAP's settings bytes");
+  ok(inf.proto === 8 && ed.hasPresetLearn && ed.hasScenes && ed.hasInputPerPreset,
+     "protocol 6 (7 since test build 51, 8 since 53): a preset's own controls, scenes, MAP's settings bytes, the preset's input");
   // MAP: GUITAR TONE and PICKUP, PLAY VIEW, SCENE+SWITCH, SCENE FOOTSW
   let m = await ed.pedalMap();
   ok(m.rc === 0 && m.more && m.more.tone === 0 && m.more.pickup === 0 && m.more.view === 0 && !m.more.sceneWins && !m.more.feetPresets,
@@ -549,7 +550,8 @@ if (FX) {
   ok(pl.rc === 0 && pl.entries.length === 1 && pl.used === 1 && pl.entries[0].src === 32, "PL: CC 33 forgotten");
   {   // the 64 places, all the presets together
     const room = (slot + 20) % 52, rows = [];
-    for (let b = 0; b < 12; b++) for (let k = 0; k < 5; k++) rows.push(ccParam(b, k));
+    for (let b = 0; b < 12; b++) for (let k = 0; k < 5; k++) if (!(b === B_GATE && k >= 3 && ed.hasInputPerPreset)) rows.push(ccParam(b, k));   // (53: GT's
+    // GTR TONE + PICKUP and INPUT take no controller)
     for (let b = 0; b < 12; b++) rows.push(8 + b);
     let r = null;
     for (let i = 0; i < PRESET_MAP_N - 1; i++) r = await ed.presetPut(room, { src: 60 + i, dst: rows[i], mode: rows[i] < 20 ? MAP_PRESS : MAP_VALUE, lo: 0, hi: 100, clo: 0, chi: 127 });
@@ -598,11 +600,31 @@ if (FX) {
   ok(sc.rc === 0 && sc.names[0] === "A" && sc.names[2] === "CHO", "SCENE: a name of one character");
   const bn1 = await ed.request(33, [4, 1, 65, 0, 66]), bn2 = await ed.request(33, [4, 1, 127, 0, 0]), bn3 = await ed.request(33, [4, 4, 65, 0, 0]);
   ok(bn1[0] === 1 && bn2[0] === 1 && bn3[0] === 1, "SCENE: a character after a name's end, one past ASCII 126, a fifth scene: refused");
+  if (ed.hasInputPerPreset) {   // protocol 8 (test build 53): a scene's own tone; the GT page's input settings
+    let t = await ed.sceneTone(1, 2);
+    ok(t.rc === 0 && (t.set & 2) && t.tones && t.tones[1] === 2 && t.masks.every((x) => x < 4096) && (await ed.state()).dirty,
+       "SCENE: scene 2's own tone NATURAL, stored as things are; the masks the blocks alone (protocol 8): a change until SAVE");
+    t = await ed.sceneSet(1, 1 << dly);
+    ok(t.rc === 0 && t.tones[1] === 2 && t.masks[1] === 1 << dly, "SCENE: scene 2's blocks set again: its tone kept");
+    const bt = await ed.request(33, [5, 1, 10]);
+    ok(bt[0] === 1 && (await ed.scenes()).tones[1] === 2, "SCENE: a tone past MUDDY is refused");
+    const gt = cat.blocks[B_GATE].types[0], tx = gt.params[4].texts, tt = gt.params[3].texts;
+    ok(gt.params.map((x) => x.name).join() === "THRESH,RELEASE,PRESET LVL,GTR TONE,INPUT" && tx && tx[0] === "SETTINGS" && tx[1] === "-10 DB" &&
+       tx[11] === "0 DB" && tx[21] === "+10 DB" && tx[60] === "+10 DB" && tt && tt[0] === "SETTINGS" && tt[4] === "WARM" && tt[24] === "WARM",
+       "catalogue: GT's GTR TONE (its tone's name) and INPUT (SETTINGS, -10 DB .. +10 DB)");
+    ok(await ed.setParam(B_GATE, 3, 24) === 24 && await ed.setParam(B_GATE, 4, 14) === 14 && (await ed.state()).preset.p[B_GATE][3] === 24,
+       "SET: GT's GTR TONE WARM with PICKUP HUMBUCK (24), INPUT +3 dB (14)");
+    const no = await ed.presetPut(other, { src: 90, dst: ccParam(B_GATE, 3), mode: MAP_VALUE, lo: 0, hi: 100, clo: 0, chi: 127 });
+    ok(no.rc === 1, "PL: no controller on GT's GTR TONE + PICKUP (refused)");
+    sc = await ed.scenes();                     // (what SAVE below is compared with)
+  }
   ok(await ed.save(other) === 0 && (await ed.state()).slot === other, "SAVE into another slot");
   const pl2 = await ed.presetMap(other), sc2 = await ed.scenes();
   ok(pl2.entries.length === 1 && pl2.entries[0].src === 32 && pl2.used === 2 && sc2.saved.set === sc.set && sc2.saved.masks[2] === 1 << dly,
      "SAVE into another slot takes the preset's own controls and its scenes along");
   ok(sc2.saved.names[2] === "CHO" && sc2.saved.names[0] === "A" && !(await ed.state()).dirty, "SAVE keeps the scenes' names (test build 50)");
+  if (ed.hasInputPerPreset) ok(sc2.saved.tones && sc2.saved.tones[1] === 2 && (await ed.state()).preset.p[B_GATE][4] === 14,
+                               "SAVE keeps scene 2's tone and the GT page's INPUT (test build 53)");
   await bleCheck(s);
   await s.end();
   // a power cycle: all of it read back from the flash

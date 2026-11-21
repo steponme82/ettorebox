@@ -6,7 +6,7 @@ pedal's output**, with the guitar. Since test build 52 it is ettorebox's firmwar
 
 It is a test image, its own build target (`make bt`). The normal firmware and the installer's packages are unchanged.
 
-> **Status: test build 52, ettorebox beta 52** (below; build 50 runs on a pedal: the guided learn, the scenes and their names; build 38 is the one
+> **Status: test build 53, ettorebox beta 53** (below; build 50 runs on a pedal: the guided learn, the scenes and their names; build 38 is the one
 > played longest, about 2 hours of music). Test build 27 brought the web
 > editor over Bluetooth. Up to test build 14: builds 1 to 10 ran on a pedal: the
 > radio starts, a phone sees the pedal and links, but no phone
@@ -1645,6 +1645,25 @@ pages (README, "Install"); they also take the pedal back to M-VAVE's firmware.
    `ettorebox`.
 4. The Chocolate links as before.
 
+## Test build 53 (ettorebox beta 53): the preset's input on the GT page, a scene's tone
+
+Build 52 with what a gig asked for: GUITAR TONE "a game changer", wanted per guitar and per scene, and the INPUT level with it
+(-10 dB suits weak pickups, a passive piezo then sounds cold). The GT page is now the preset's input: after THRESH, RELEASE and
+PRESET LVL come **GTR TONE**, **PICKUP** and **INPUT**, each SETTINGS (the SETTINGS page's own row) or a value of this preset's.
+Each scene can have a tone of its own, set in the web editor's scenes grid (TONE). Which wins: the scene, the preset, SETTINGS.
+A change glides in 24 ms. The details: [MIDI.md](MIDI.md), "The preset's input on the GT page, and a scene's tone". Also: the
+installer and editor pages no longer zoom (pinch or double tap), as the RC-10R app.
+
+### What to check
+
+1. A preset as it was: the GT page shows SETTINGS in its last three rows, and the sound is as in beta 52.
+2. On the GT page, GTR TONE WARM, PICKUP HUMBUCK, INPUT +3 DB: heard at once, with no click; SAVE, another preset (SETTINGS'
+   sound), back: the preset's again.
+3. In the editor, a scene's TONE on NATURAL in a preset on MUDDY: recall the scene, the tone opens up; another scene, back to
+   MUDDY. No click either way.
+4. Hold FX on GTR TONE, PICKUP or INPUT: `NOT FOR A CONTROLLER`, nothing learned.
+5. MONO SYNTH with INPUT at 0 dB or more (its tracker's gate is a fixed level: at -10 dB notes start late and drop out).
+
 ## Checked on a computer
 
 - `tests/test_bt_ring.c`: a phone at 44.1 kHz with 15 ms of jitter, the pedal at its real 44,117.6 Hz, 60 s: no underrun, the rate
@@ -1704,6 +1723,14 @@ pages (README, "Install"); they also take the pedal back to M-VAVE's firmware.
     image calls three more library functions, all in members it already links (`att_server_notify`,
     `hci_le_get_acl_packet_num`, `stack_run_loop_resume`).
 - `tests/test_log.mjs`: the FIFO line and `W` named, and the nine lines classified and reported, as the log tool prints them.
+- Test build 53, the preset's input: `tests/uisim.c` `gt_input` (the GT page's six rows drawn above the footer, a factory preset
+  on SETTINGS in all three, GTR TONE and PICKUP one item a detent and stopping at their ends, one setting holding both, INPUT
+  in dB, every text within its box, NOT FOR A CONTROLLER, CC 36 and 37 none and 35 still PRESET LVL, a scene's tone over the
+  preset's with the preset's PICKUP and INPUT kept, the scene keeping its tone when it stores its blocks, SAVE keeping it);
+  `tests/test_editor.mjs` (editor protocol 8: a scene's tone set, kept when its blocks are set, one past MUDDY refused, the
+  masks the blocks alone, the GT catalogue's names and texts, SET on GT's 4th and 5th, no controller learned there, SAVE
+  keeping the tone and INPUT); `tests/test_store.c` (the filter given the tone and the pickup). The release image is v42's byte
+  for byte (`d96b2adf`). Not covered: the glide by ear, and the sound of the tones on a real guitar: only the pedal can tell.
 - Test build 41, the Chocolate by cable: `tests/test_usb_host.c` (felucca-bsp's descriptor parser on the Chocolate's layout as
   macOS reads it, configuration 1, HID at interface 0 with its interrupt endpoint, Audio Control at 1, MIDI streaming at 2,
   with bulk and interrupt endpoints and two numberings, a cut read, no MIDI interface, unusable sizes; the packets passed on,

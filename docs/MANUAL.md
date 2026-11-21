@@ -1,9 +1,9 @@
 # ettorebox manual
 
 ettorebox is guitar firmware for the M-VAVE BlackBox, built on [OpenPocket](https://github.com/isod89/openpocket). This
-manual covers beta 52: installing it, every control and page of the pedal, the sounds, presets and scenes, controllers,
+manual covers beta 53: installing it, every control and page of the pedal, the sounds, presets and scenes, controllers,
 Bluetooth, USB, the web editor, and what is inside. Up to beta 51 the pedal showed OpenPocket's name (start-up screen,
-Bluetooth, USB); everything else here applies to beta 51 too.
+Bluetooth, USB); beta 53 made the GT page the preset's input ([4](#the-presets-input-the-gt-page)).
 
 It is a beta. Keep M-VAVE's own firmware file at hand, and read [Before you install](#before-you-install) first.
 
@@ -47,13 +47,13 @@ It is a beta. Keep M-VAVE's own firmware file at hand, and read [Before you inst
 4. Press **Install**. It takes one to two minutes: do not unplug or switch the pedal off, keep the tab open. The steps
    light up as they go: start, check, loader, write, restart, done. Nothing is written before the pedal has checked the
    whole package.
-5. The pedal restarts. Its start-up screen reads **`ETTOREBOX`** and **`BETA 52  OPENPOCKET V42`** (the OpenPocket
+5. The pedal restarts. Its start-up screen reads **`ETTOREBOX`** and **`BETA 53  OPENPOCKET V42`** (the OpenPocket
    version it is built on).
 
 From the command line instead, with the repository cloned:
 
 ```bash
-gh release download beta-52 -R steponme82/ettorebox -D build/bt --clobber
+gh release download beta-53 -R steponme82/ettorebox -D build/bt --clobber
 ```
 
 ```bash
@@ -152,7 +152,8 @@ The view is kept with the settings at the next save.
 The block's band on its colour (with the preset's number), then its rows: **ON**, **MODEL**, and up to five settings, each
 with its value and a bar. Values show in real units where a bare number would mean little (`450 MS`, `+5TH`, `+1.5 DB`).
 A setting that has a controller learned on it shows its number after its name (`GAIN CC4`). The DSP load sits at the
-bottom right. While a NAM model loads, MODEL reads `LOADING`.
+bottom right. While a NAM model loads, MODEL reads `LOADING`. The GT page has six rows, a little shorter: the gate's, then
+the preset's input ([4](#the-presets-input-the-gt-page)).
 
 ### The preset list
 
@@ -204,7 +205,7 @@ no clicks.
 
 | Block | Models |
 | --- | --- |
-| GT | NOISE GATE. Its third row, **PRESET LVL**, is the preset's own level: `-INF` (silence) at 0, 0 dB at 50, +15 dB at 100 |
+| GT | NOISE GATE: THRESH and RELEASE, then the preset's own: **PRESET LVL** (its level: `-INF` at 0, 0 dB at 50, +15 dB at 100), **GTR TONE**, **PICKUP** and **INPUT** (below) |
 | CMP | SQUASH, STUDIO, OPTO LA-2, SLOW SWELL |
 | PIT | OCTAVER, POLY OCTAVE, WHAMMY (swept by its PEDAL row or the expression pedal), HARMONIZER, DETUNE, **LOW OCTAVE** (a polyphonic octave down on the low strings, as an OC-3) |
 | SFX | ENVELOPE WAH, AUTO WAH, RING MOD, BITCRUSHER, SLICER, LO-FI RADIO, SQUARE SYNTH, **WAH** (a wah pedal, on the expression pedal or its PEDAL row) |
@@ -228,6 +229,22 @@ detail: [SOUNDS-AND-CONTROLS.md](SOUNDS-AND-CONTROLS.md); ettorebox's own effect
   the loudness. PRESET LVL balances your presets. The output ends in a soft limiter, not a hard clip.
 - **GUITAR TONE and PICKUP** (SETTINGS): the input loads your pickup as a real amp's input would, named by the sound
   (BRIGHT, NATURAL, SMOOTH, WARM, WARMER, PUNCHY, DARK, DARKER, MUDDY).
+
+### The preset's input: the GT page
+
+Everything that happens before the chain belongs to the preset, on its GT page: after the gate's THRESH and RELEASE and the
+preset's PRESET LVL come three rows, each **SETTINGS** (the SETTINGS page's own row) or a value of this preset's:
+
+- **GTR TONE**: BRIGHT, NATURAL, SMOOTH, WARM, WARMER, PUNCHY, DARK, DARKER, MUDDY: how the input loads your pickup, by
+  its sound;
+- **PICKUP**: SINGLE, HUMBUCK, P90, the pickup GTR TONE assumes;
+- **INPUT**: -10 to +10 dB, the guitar's level into the chain (more for a weak pickup or a piezo, less for hot humbuckers).
+
+The knob steps one item a detent and stops at the ends. A preset per guitar, a brighter preset for some songs: set them
+here. A scene can have its own tone over the preset's ([5](#scenes)): a piezo scene on NATURAL in a preset on MUDDY. Which
+wins: the scene's tone, then the preset's, then SETTINGS'. Changes glide in 24 ms, with no click. Every factory preset says
+SETTINGS in all three, so nothing changes until you set one; they act whether the gate is on or off. They take no
+controller (`NOT FOR A CONTROLLER`): scenes switch the tone.
 
 ### Factory presets
 
@@ -259,6 +276,8 @@ Like Helix's snapshots: four scenes a preset, each a set of blocks on and off. R
   **SWITCH WINS** (the default: the switch owns that block, scenes set the others) or **SCENE WINS** (scenes set it too;
   the switch's change lasts until the next scene).
 - **The footswitches in SCENES' view:** SETTINGS' **SCENE FOOTSW**: **SCENES** (the default) or **PRESETS**.
+- **Tone:** each scene can have a guitar tone of its own (the web editor's scenes grid, TONE: **Preset**, or one of the
+  nine), over the preset's GTR TONE. SAVE keeps it with the scene.
 
 A good start with a Chocolate's four switches: two scenes and two blocks.
 
@@ -313,6 +332,7 @@ it is written at once (an unsaved sound stays unsaved).
 - **Hold FX on MODEL:** the preset's MIDI table, every control of this preset (`CC 7  SFX PEDAL +VOL`), then the editor's
   in grey (`ALL: ...`: they work in every preset). The knob picks, hold FX clears, HOME goes back.
 - A preset's own control comes before the editor's, which come before the pedal's own numbers (6.5).
+- Not on GT's GTR TONE, PICKUP and INPUT: `NOT FOR A CONTROLLER` (a preset's set-up; a scene switches the tone).
 
 ### 6.4 The two-job expression pedal
 
@@ -343,7 +363,7 @@ From any controller, over Bluetooth or USB, on SETTINGS' CHANNEL (OMNI by defaul
 | CC 8 to 19 | flip a block on or off (SETTINGS' SWITCH: MOMENT or LATCH) |
 | CC 20 to 31 | a block on (64 and up) or off |
 | CC 52 to 63 | a block's model |
-| each setting's own number | that setting, 0 to 127 as 0 to 100 (the table: [MIDI.md](MIDI.md)) |
+| each setting's own number | that setting, 0 to 127 as 0 to 100 (the table: [MIDI.md](MIDI.md)); not GT's GTR TONE + PICKUP and INPUT: CC 36 and 37 do nothing |
 | CC 64 (64 and up) | a SYN PAD catches the chord |
 | CC 65 to 68 (any value) | recall scene 1 to 4 |
 | CC 116 (64 and up) | a tap of the delay's tempo |
@@ -408,8 +428,9 @@ One phone for music (A2DP), the Chocolate (the pedal as its central) and the edi
 
 - **Presets:** the list (search, All, Yours, Factory), **Import**, **Back up all**.
 - **Sound:** the preset on the pedal: its name (rename it here), its chain (drag a block to move it; arrow keys choose, Space
-  switches, Alt + arrows move), each block's model and settings, the four scenes under the chain (a tap recalls one, a grid
-  sets their blocks, a field names them), its **Level** (PRESET LVL), **Compare**, **Revert**, **Save**, **Save as…**.
+  switches, Alt + arrows move), each block's model and settings (the GT block's GTR TONE, PICKUP and INPUT as lists), the
+  four scenes under the chain (a tap recalls one, a grid sets their blocks and their TONE, a field names them), its
+  **Level** (PRESET LVL), **Compare**, **Revert**, **Save**, **Save as…**.
 - **Models and cabinets:** the 16 NAM capture slots and the 8 IR slots: amp captures from TONE3000 or your files, cabinet
   IRs from your WAV files, which presets use a slot, rename, move, remove.
 - **MIDI:** what is connected and what it sends, the pedal's map named for the current preset, the controls learned in the
@@ -436,9 +457,9 @@ The protocol: [EDITOR-PROTOCOL.md](EDITOR-PROTOCOL.md) (protocol 7 for this firm
 | SCENE+SWITCH | SWITCH WINS, SCENE WINS | SWITCH WINS | whether scenes set a block that has its own switch |
 | SCENE FOOTSW | SCENES, PRESETS | SCENES | what the footswitches do in SCENES' view |
 | VOL PEDAL | AT INPUT, BEFORE DLY | AT INPUT | where the expression pedal's volume acts |
-| INPUT | -10 DB to +10 DB | 0 DB | the guitar's level into the chain |
-| GUITAR TONE | BRIGHT, NATURAL, SMOOTH, WARM, WARMER, PUNCHY, DARK, DARKER, MUDDY | NATURAL | the pickup's load, by its sound |
-| PICKUP | SINGLE, HUMBUCK, P90 | SINGLE | the pickup GUITAR TONE assumes |
+| INPUT | -10 DB to +10 DB | 0 DB | the guitar's level into the chain (where a preset's GT page says SETTINGS) |
+| GUITAR TONE | BRIGHT, NATURAL, SMOOTH, WARM, WARMER, PUNCHY, DARK, DARKER, MUDDY | NATURAL | the pickup's load, by its sound (where the scene and the preset say nothing) |
+| PICKUP | SINGLE, HUMBUCK, P90 | SINGLE | the pickup GUITAR TONE assumes (where the preset says SETTINGS) |
 | TAILS | OFF, ON | OFF | the delay and the reverb ring out when they go off and across presets |
 | BT POWER | HIGH, MID, LOW | HIGH | the radio's transmit power |
 | OUTPUT | MONO, STEREO, GTR+BASS | MONO | STEREO: the delay, the reverb, the modulations and the phone's music spread; GTR+BASS: the guitar left, LOW OCTAVE's bass right |
@@ -458,6 +479,7 @@ The protocol: [EDITOR-PROTOCOL.md](EDITOR-PROTOCOL.md) (protocol 7 for this firm
 | The Chocolate does not link | Both on, the Chocolate in a MIDI mode and not connected to a phone's app; DLY not held at power-on; one Chocolate per power-on |
 | A controller does nothing | SETTINGS: `LAST:` shows what arrived; check CHANNEL; a control learned in one preset works only there |
 | Crackles, or `DSP` red | A lighter preset (heavy: drives, high-gain amps, organs, the big reverbs); the diagnostics' costliest blocks |
+| MONO SYNTH misses notes, starts late | INPUT at 0 dB or more for that preset (GT page): its note follower listens through a gate of fixed level. Single notes, the neck pickup, other strings muted |
 | `LAST START FAILED` at start-up | The start before crashed, so the effects are off for this start (`SAFE` before the load). Switch off and on again; if it comes back, report it with a photo of that screen |
 | It restarts in a loop | The installer page's rescue mode; then [RESCUE.md](RESCUE.md) |
 | A bug to report | An issue at https://github.com/steponme82/ettorebox: what you did and saw, the M-VAVE firmware the pedal had before, photos of the two diagnostics pages, and the log: with the repository cloned and the pedal on USB, `make log` (the start-up report, the last start's record and Bluetooth's counters, each explained) |
@@ -500,7 +522,7 @@ For the curious, and for anyone who wants to help. Each topic links the document
   through simulated power cuts, the installer and the editor against simulated pedals. [BUILDING.md](BUILDING.md).
 - **The simulator:** `make sim` runs the pedal's own screen, editor and preset code on your computer, with a front panel
   you can click, and the sound through bundled guitar loops. [SIMULATOR.md](SIMULATOR.md).
-- **The room left** in beta 52: 6,692 bytes of the app's 644,928 in the flash, 1,248 bytes of main RAM and 536 bytes of the RAM
+- **The room left** in beta 53: 4,736 bytes of the app's 644,928 in the flash, 1,248 bytes of main RAM and 488 bytes of the RAM
   code window. Every new feature has to pay for itself.
 
 ## 13. What it leaves out

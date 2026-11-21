@@ -377,8 +377,15 @@ int px_order_valid(const uint8_t *o)
 }
 typedef struct { const char *name; uint8_t np; const char *const *pn; } tdef;
 
+#if PX_OWN_FX   /* test build 53: the GT page is the preset's input: its 4th setting holds GTR TONE and PICKUP (the tone + 10 x the
+                 * pickup, 0 each: SETTINGS' own), its 5th INPUT (0: SETTINGS', 1..21: -10..+10 dB). The gate never reads them:
+                 * firmware/px_midi.h px_in_eff does, before the chain. Every factory preset has 0 in both */
+static const char *const PN_GATE[] = {"THRESH", "RELEASE", "PRESET LVL", "GTR TONE", "INPUT"};
+static const tdef T_GATE[] = {{"NOISE GATE", 5, PN_GATE}};
+#else
 static const char *const PN_GATE[] = {"THRESH", "RELEASE", "PRESET LVL"};   /* (3rd: the preset's level, v36) */
 static const tdef T_GATE[] = {{"NOISE GATE", 3, PN_GATE}};
+#endif
 
 static const char *const PN_CMP[] = {"SUSTAIN", "ATTACK", "LEVEL", "MIX"};
 static const char *const PN_OPTO[] = {"COMPRESS", "LEVEL", "MIX"};

@@ -24,8 +24,9 @@ Not affiliated with M-VAVE, Donner or the OpenPocket maintainers. Install at you
 
 ## Status
 
-Beta. The latest is beta 52, test build 52 (see Releases): at start-up the pedal reads `ETTOREBOX`, a phone and the
-computer list it as `ettorebox`. Build 50 runs on its author's BlackBox, and build 38 is the one played
+Beta. The latest is beta 53, test build 53 (see Releases): the GT page is the preset's input (its own GUITAR TONE, PICKUP
+and INPUT level), and a scene can have its own tone. Since beta 52 the pedal is `ettorebox` on its screen, to a phone and
+to a computer. Build 50 runs on its author's BlackBox, and build 38 is the one played
 longest, about two hours of music on stage. [docs/BT-AUDIO-TEST.md](docs/BT-AUDIO-TEST.md) has every test build's notes
 and what to check on each.
 
@@ -59,7 +60,8 @@ and what to check on each.
 8. Effects of its own: LOW OCTAVE (a polyphonic octave down, as an OC-3), SYN PAD (a chord held on a footswitch), TREBLE
    BOOST, WAH, TAPE FLUTE. SHIMMER in tune, BARITONE sooner, MONO SYNTH's tracker, SITAR and STRINGS rebuilt, 12-STRING
    steady.
-9. GUITAR TONE: the input loads the pickup as a real amp's would, named by its sound (BRIGHT to MUDDY).
+9. GUITAR TONE: the input loads the pickup as a real amp's would, named by its sound (BRIGHT to MUDDY). Each preset can have
+   its own, with its PICKUP and its INPUT level, on the GT page, and each scene its own tone.
 10. Stereo output (the delay, the reverb and the modulations spread, or the guitar left and LOW OCTAVE's bass right), and
     USB audio with its own routing (record the DI or the pedal, send the computer's sound back anywhere in the chain).
 11. Tap tempo (CC 116), next and previous preset (CC 118 and 119), the expression pedal (CC 117), and a SETTINGS page
@@ -89,7 +91,7 @@ over USB with a data cable, press **Connect**, then **Install**. The web editor 
 From the command line instead, with this repository cloned:
 
 ```
-gh release download beta-52 -R steponme82/ettorebox -D build/bt --clobber
+gh release download beta-53 -R steponme82/ettorebox -D build/bt --clobber
 make serve-bt
 ```
 

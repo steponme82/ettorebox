@@ -406,7 +406,7 @@ int main(void)
             for (uint32_t pu = 0; pu < 3u; pu++) for (uint32_t z = 1; z < PX_INZ_N; z++) {
                 float c[5];
                 px_pickup = (uint8_t)pu; px_inz = (uint8_t)z;
-                if (!px_inz_coefs(44117.6f, c)) { worst = 99; continue; }
+                if (!px_inz_coefs(44117.6f, px_inz, px_pickup, c)) { worst = 99; continue; }
                 for (double f = 100; f <= 8000; f *= 1.25) {
                     const double w = 2 * M_PI * f / 44117.6, L = PX_PU_L[pu], R = PX_PU_R[pu], C = PX_PU_C[pu], RL = PX_INZ_RL[z];
                     const double Ct = C * PX_INZ_CK[z];   /* (test build 47: BRIGHT, the cable's capacitance mostly gone) */
@@ -423,7 +423,7 @@ int main(void)
             printf("GUITAR TONE: the filter against the loaded pickup: %.2f dB at most up to 5 kHz, %.2f dB up to 8 kHz\n", worst5, worst);
             CHECK(worst5 < 0.6 && worst < 1.2, "GUITAR TONE: the filter is the loaded pickup's response (0.6 dB to 5 kHz, 1.2 dB to 8 kHz), every PICKUP and GUITAR TONE");
             px_inz = 0; px_pickup = 1;
-            { float c[5]; CHECK(!px_inz_coefs(44117.6f, c), "IN-Z: 1M is no filter at all (the input as it is)"); }
+            { float c[5]; CHECK(!px_inz_coefs(44117.6f, px_inz, px_pickup, c), "IN-Z: 1M is no filter at all (the input as it is)"); }
             px_inz = 3; px_pickup = 1;
             const int n0 = a_inz_n;
             CHECK(st_commit() == 0, "IN-Z: 90K, HUMBUCK, a commit");

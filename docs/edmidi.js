@@ -325,8 +325,13 @@ function renderMap() {
       h("th", { scope: "row" }, h("i", { class: `led${p.on[b] ? " on" : ""}` }), h("span", { text: B.label }), h("small", { text: T.name })),
       h("td", {}, cell({ kind: "on", b, mode: "toggle" }, "On / off", ccOn(b), `flip ${ccToggle(b)}`)),
       h("td", {}, cell({ kind: "type", b }, "Type", ccType(b))),
-      Array.from({ length: NPAR }, (_, k) => h("td", {}, T.params[k] ? cell({ kind: "param", b, k }, T.params[k].name, ccParam(b, k))
-        : h("span", { class: "cc-cell none", title: `${T.name} has no setting ${k + 1}: the pedal stores CC ${ccParam(b, k)} and ignores it.` }, h("span", { class: "cc-n", text: "–" }), h("span", { class: "cc-c", text: `CC ${ccParam(b, k)}` })))));
+      Array.from({ length: NPAR }, (_, k) => {
+        // (test build 53, protocol 8: the GT block's GTR TONE + PICKUP and INPUT are set on the pedal or here, by no controller)
+        const setUp = T.params[k] && B.label === "GT" && k >= 3 && !!(app.ed && app.ed.hasInputPerPreset);
+        return h("td", {}, T.params[k] && !setUp ? cell({ kind: "param", b, k }, T.params[k].name, ccParam(b, k))
+          : h("span", { class: "cc-cell none", title: setUp ? `${T.params[k].name}: set on the pedal or in the Sound section, never by a controller (CC ${ccParam(b, k)} does nothing).`
+            : `${T.name} has no setting ${k + 1}: the pedal stores CC ${ccParam(b, k)} and ignores it.` }, h("span", { class: "cc-n", text: "–" }), h("span", { class: "cc-c", text: `CC ${ccParam(b, k)}` })));
+      }));
   });
   const learned = cfg.mappings;
   el.append(

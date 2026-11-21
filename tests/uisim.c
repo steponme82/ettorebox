@@ -806,6 +806,80 @@ static int two_jobs(const char *d)
     px_midi_pl_clear(); load_preset(9); cur_preset = 9; ui_home(); hold(0, 10);
     return 0;
 }
+/* ---- test build 53: the GT page is the preset's input: GTR TONE, PICKUP, INPUT; a scene's tone over the preset's ---- */
+static int gt_tone(void) { return (int)px_gt_tone(PRESET.p[PX_B_GATE][PX_GT_TONE]); }
+static int gt_input(const char *d)
+{
+    px_midi_map_clear(); px_midi_pl_clear(); learn_saved = 0;
+    px_live = 0; px_inz = 1; px_pickup = 0; px_in_db = -10;          /* SETTINGS: SMOOTH, SINGLE, -10 dB */
+    ui_home(); load_preset(9); cur_preset = 9; px_sc.set = 0; hold(0, 10); full();
+    CHECK(PRESET.p[PX_B_GATE][PX_GT_TONE] == 0 && PRESET.p[PX_B_GATE][PX_GT_INPUT] == 0, "GT input: a factory preset has 0 in both: SETTINGS'");
+    {
+        const px_in_t w = px_in_eff(&PRESET, 0);
+        CHECK(w.inz == 1 && w.pickup == 0 && w.db == -10, "GT input: SETTINGS' own where the preset asks nothing");
+    }
+    ui_enter_block(PX_B_GATE); ui_item = 0; hold(0, 10); ui_render(); shot(d, "gt_input_page");
+    CHECK(ui_nitems() == 8 && E_P0 + 6u * UI_ROW_S <= F_Y - 2u, "GT input: six rows, 25 px each, above the footer");
+    CHECK(count_col(0, E_P0 + 5u * UI_ROW_S + 1u, 240, UI_ROW_S - 2u, UI_TXT) > 0, "GT input: INPUT, the sixth row, drawn");
+    for (int i = 0; i < 4; i++) ui_turn(1, 0);                       /* MODEL, THRESH, RELEASE, PRESET LVL, GTR TONE */
+    CHECK(ui_item == 2u + PX_GT_TONE, "GT input: the knob walks down to GTR TONE");
+    tap(UB_PUSH); CHECK(ui_mode == M_EDIT, "GT input: PUSH edits GTR TONE");
+    ui_turn(-1, 0); CHECK(PRESET.p[PX_B_GATE][PX_GT_TONE] == 0, "GT input: SETTINGS first: the knob stops there");
+    ui_turn(1, 0); CHECK(gt_tone() == 1, "GT input: one detent, one item: BRIGHT");
+    for (int i = 0; i < 20; i++) ui_turn(1, 1);
+    CHECK(gt_tone() == 9, "GT input: turned on fast, one item a detent all the same: MUDDY, the last, where it stops");
+    for (int i = 0; i < 5; i++) ui_turn(-1, 0);
+    CHECK(gt_tone() == 4, "GT input: five back: WARM");
+    hold(0, 10); ui_render(); shot(d, "gt_input_tone_warm");
+    tap(UB_PUSH); ui_turn(1, 0); tap(UB_PUSH);                       /* PICKUP */
+    CHECK(ui_mode == M_EDIT && ui_item == 3u + PX_GT_TONE, "GT input: PICKUP, the next row");
+    ui_turn(1, 0); ui_turn(1, 0); ui_turn(1, 0); ui_turn(1, 0);
+    CHECK(px_gt_pickup(PRESET.p[PX_B_GATE][PX_GT_TONE]) == 3 && gt_tone() == 4, "GT input: P90, the last; the tone kept (one setting holds both)");
+    ui_turn(-1, 0);
+    CHECK(px_gt_pickup(PRESET.p[PX_B_GATE][PX_GT_TONE]) == 2, "GT input: back one: HUMBUCK");
+    tap(UB_PUSH); ui_turn(1, 0); tap(UB_PUSH);                       /* INPUT */
+    CHECK(ui_mode == M_EDIT && ui_item == 2u + PX_GT_INPUT + 1u, "GT input: INPUT, the last row");
+    for (int i = 0; i < 14; i++) ui_turn(1, 0);
+    CHECK(PRESET.p[PX_B_GATE][PX_GT_INPUT] == 14, "GT input: 14 detents: +3 DB");
+    hold(0, 10); ui_render(); shot(d, "gt_input_input_plus3");
+    {
+        const px_in_t w = px_in_eff(&PRESET, 0);
+        CHECK(w.inz == PX_INZ_ORDER[3] && w.pickup == 1 && w.db == 3, "GT input: the preset's WARM, HUMBUCK, +3 dB over SETTINGS'");
+        char b[16];
+        ui_gt_text((int)PX_GT_TONE, 0, b); CHECK(!strcmp(b, "SETTINGS"), "GT input: 0 reads SETTINGS");
+        ui_gt_text((int)PX_GT_TONE, 4, b); CHECK(!strcmp(b, "WARM"), "GT input: the tones by their sound");
+        ui_gt_text((int)PX_GT_TONE + 1, 2, b); CHECK(!strcmp(b, "HUMBUCK"), "GT input: the pickups by name");
+        ui_gt_text((int)PX_GT_INPUT + 1, 14, b); CHECK(!strcmp(b, "+3 DB"), "GT input: INPUT in dB");
+        ui_gt_text((int)PX_GT_INPUT + 1, 1, b); CHECK(!strcmp(b, "-10 DB"), "GT input: INPUT from -10 DB");
+        ui_gt_text((int)PX_GT_INPUT + 1, 11, b); CHECK(!strcmp(b, "0 DB"), "GT input: 0 DB");
+        CHECK(ft_width(&FT_MD, "SETTINGS") <= 230u - E_LIST_X && ft_width(&FT_MD, "HUMBUCK") <= 230u - E_LIST_X &&
+              ft_width(&FT_SM, "GTR TONE") < E_LIST_X - BAR_X, "GT input: the texts fit their boxes");
+    }
+    tap(UB_PUSH); hold(1u << UB_FX, 850); hold(0, 10); ui_render(); shot(d, "gt_input_not_for_a_controller");
+    CHECK(ui_mode == M_BLOCK && ul.note == UL_NOCTL && px_midi_pl_count(9) == 0, "GT input: hold FX on INPUT: not for a controller, nothing learned");
+    px_cc_build();
+    CHECK(px_cc_tab[36].kind == PXM_NONE && px_cc_tab[37].kind == PXM_NONE && px_cc_tab[35].kind == PXM_PARAM,
+          "GT input: CC 36 and 37 are no Control Change; 35 (PRESET LVL) still is");
+    {   /* scenes: SCENE 2's own NATURAL over the preset's WARM; kept when the scene playing stores its blocks, and by SAVE */
+        px_sc.set = 3u; px_sc.cur = 0; px_sc.mask[0] = (uint16_t)sc_now();
+        px_sc.mask[1] = (uint16_t)(sc_now() | 2u << PX_SC_TONE_SH);
+        CHECK(px_scene_tone() == 0, "GT input: SCENE 1 has no tone of its own: the preset's");
+        ui_scene_recall(1);
+        CHECK(px_sc.cur == 1 && px_scene_tone() == 2, "GT input: SCENE 2's own tone");
+        const px_in_t w = px_in_eff(&PRESET, px_scene_tone());
+        CHECK(w.inz == 0 && w.pickup == 1 && w.db == 3, "GT input: the scene's NATURAL over the preset's WARM; its PICKUP and INPUT stay");
+        PRESET.on[PX_B_DELAY] ^= 1u;
+        const uint32_t dl = PRESET.on[PX_B_DELAY];
+        ui_scene_recall(0);
+        CHECK(px_sc_tone(px_sc.mask[1]) == 2 && (px_sc.mask[1] >> PX_B_DELAY & 1u) == dl, "GT input: SCENE 2 kept what was switched, and its tone");
+        ui_scene_recall(1); ui_home(); hold(0, 10);
+        hold(1u << UB_PUSH, 850); hold(0, 5); tap(UB_PUSH); hold(0, 10);
+        CHECK(px_sc_tone(px_sc_tab[9].mask[1]) == 2 && px_sc_tab[9].cur == 1, "GT input: SAVE writes SCENE 2 with its tone");
+    }
+    px_inz = 0; px_pickup = 0; px_in_db = 0; px_sc.set = 0; px_sc_tab[9].set = 0;
+    load_preset(9); cur_preset = 9; ui_home(); hold(0, 10);
+    return 0;
+}
 static int usb_notes(const char *d)
 {
     static const uint32_t N[] = {PXU_OK, PXU_NOMIDI, PXU_LOW, PXU_LOST};
@@ -1103,7 +1177,8 @@ int main(int argc, char **argv)
     if (mid_cfg.chan != 0) { printf("midi: channel 16 + 1 must wrap to omni\n"); return 1; }
     midi_knob(-1); if (mid_cfg.chan != 16) { printf("midi: omni - 1 must wrap to 16\n"); return 1; }
 #if PX_OWN_FX
-    return quick_wins(d) || overhaul(d) || pad_gestures(d) || usb_notes(d) || learn_live(d) || live_view(d) || scenes(d) || two_jobs(d);
+    return quick_wins(d) || overhaul(d) || pad_gestures(d) || usb_notes(d) || learn_live(d) || live_view(d) || scenes(d) || two_jobs(d) ||
+           gt_input(d);
 #else
     return quick_wins(d) || overhaul(d);
 #endif

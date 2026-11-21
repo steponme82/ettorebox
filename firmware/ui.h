@@ -93,13 +93,35 @@ static struct {
     uint8_t tile_on[PX_NBLK], tile_sel[PX_NBLK], tile_blk[PX_NBLK], tile_mv[PX_NBLK];
     int info_b, info_t, info_on, info_m;
     int blk, type, np, item, mode, on;
+#if PX_OWN_FX
+    uint8_t val[PX_NPAR + 1];          /* (test build 53: the GT page's six rows) */
+#else
     uint8_t val[PX_NPAR];
+#endif
     int hint, amp_ld, row_ld; uint32_t bnum;
     char status[12]; int status_kind;
 } uc;
 static void ui_invalidate(void) { uc.full = 1; }
 static int ui_np(void) { return px_nparams((int)ui_blk, PRESET.type[ui_blk]); }
+#if PX_OWN_FX
+/* test build 53: the GT page is the preset's input: THRESH, RELEASE, PRESET LVL, then GTR TONE, PICKUP and INPUT, six rows on its
+ * five settings (px_midi.h PX_GT_TONE holds the tone + 10 x the pickup: rows 3 and 4; PX_GT_INPUT: row 5), each of the three
+ * stepping one item a detent from SETTINGS (SETTINGS' own row) to its last, and stopping there. Rows of UI_ROW_S px fit six */
+#define UI_ROW_S 25u
+#define UI_GT_ROWS ((int)PX_GT_INPUT + 2)
+static int ui_gt_row(int r) { return ui_blk == PX_B_GATE && r >= (int)PX_GT_TONE ? r : -1; }   /* 3, 4, 5, else -1 */
+static int ui_nrows(void) { return ui_blk == PX_B_GATE ? UI_GT_ROWS : ui_np(); }
+static uint32_t ui_row_h(void) { return ui_nrows() > PX_NPAR ? UI_ROW_S : E_ROW; }
+#define UI_RH ui_row_h()                              /* (a row's height, its bar's place in it, the rows drawn) */
+#define UI_BAR_DY (ui_row_h() == E_ROW ? 24u : 20u)   /* (25 px rows: the bar right under the value) */
+#define UI_NROWS (ui_nrows() > PX_NPAR ? ui_nrows() : PX_NPAR)
+static int ui_nitems(void) { return 2 + ui_nrows(); }  /* 0 = type, 1 = on/off, 2.. = parameters (GT: its six rows) */
+#else
+#define UI_RH E_ROW
+#define UI_BAR_DY 24u
+#define UI_NROWS PX_NPAR
 static int ui_nitems(void) { return 2 + ui_np(); }     /* 0 = type, 1 = on/off, 2.. = parameters */
+#endif
 static const char *ui_block_name(int b) { return b == PX_B_SYN ? "SYNTH" : px_block_name(b); }   /* (the documents' name) */
 
 /* v42: a setting that picks from a list (NAM MODEL, USER IR) steps one item a detent, skips the empty slots and shows its
@@ -251,11 +273,12 @@ static void lt_open(void);                             /* (the preset's MIDI tab
 static void lt_draw(uint32_t now);
 static void lt_target(char *t, uint32_t dst);
 static int ui_live(void);                              /* (test build 47: PLAY's own view, below) */
-enum { UL_NONE, UL_DONE, UL_CLEARED, UL_FULL, UL_CANCEL };
+enum { UL_NONE, UL_DONE, UL_CLEARED, UL_FULL, UL_CANCEL, UL_NOCTL };   /* (UL_NOCTL, test build 53: a row with none) */
 static struct { uint8_t note, cc; uint32_t note_t, sig, now; } ul;   /* (now: the last pass's time) */
 static int ui_row_nums(uint32_t item, uint32_t *dsw, uint32_t *dval)   /* a row's numbers: 1 a setting, 0 ON, -1 none (MODEL) */
 {
     if (item == 1u) { *dsw = PXM_CC_TOGGLE0 + ui_blk; *dval = PXM_CC_ON0 + ui_blk; return 0; }
+    if (item >= 2u && ui_gt_row((int)item - 2) >= 0) return -2;   /* (test build 53: GTR TONE, PICKUP, INPUT: none) */
     if (item >= 2u) { *dsw = *dval = px_cc_param(ui_blk, item - 2u); return 1; }
     return -1;
 }
@@ -422,6 +445,7 @@ static void ui_learn_hold(uint32_t now)
     uint32_t dsw, dval;
     const int knob = ui_learn_nums(&dsw, &dval);
     ul.note_t = now;
+    if (knob == -2) { ul.note = UL_NOCTL; return; }    /* (test build 53: GTR TONE, PICKUP, INPUT) */
     if (knob < 0) { lt_open(); return; }               /* (on MODEL: the preset's MIDI table) */
     const int i = px_midi_pl_row(cur_preset, dsw, dval);
     if (i >= 0) {                                      /* the row has one: cleared */
@@ -453,6 +477,7 @@ static int ui_learn_line(char *t, uint16_t *c)        /* a block page's footer f
     case UL_CLEARED: b_str(t, "CC "); b_num(t, ul.cc); b_str(t, " CLEARED"); *c = UI_ACC; return 1;
     case UL_FULL: b_str(t, "LEARN: 64 IN USE, FULL"); *c = RED; return 1;
     case UL_CANCEL: b_str(t, "LEARN: CANCELLED"); *c = UI_DIM; return 1;
+    case UL_NOCTL: b_str(t, "NOT FOR A CONTROLLER"); *c = UI_DIM; return 1;
     }
     if (!UI_PAGE) return 0;
     if (ui_item == 0u && px_midi_pl_count(cur_preset)) {   /* (MODEL, in a preset that has some: its table is there) */
@@ -538,7 +563,9 @@ static void ui_scene_recall(uint32_t n)                /* (CC 65 to 68: px_midi_
         for (a = 0; a < 128u; a++)
             if (to[a] < 128u && (px_cc_tab[to[a]].kind == PXM_TOGGLE || px_cc_tab[to[a]].kind == PXM_ON)) own &= ~(1u << px_cc_tab[to[a]].blk);
     }
-    px_sc.mask[px_sc.cur] = (uint16_t)sc_now(); px_sc.set |= (uint8_t)(1u << px_sc.cur);   /* (the one playing keeps its state) */
+    px_sc.mask[px_sc.cur] = (uint16_t)((px_sc.mask[px_sc.cur] & ~PX_SC_BLOCKS) | sc_now());   /* (the one playing keeps its
+                                                     * state; test build 53: and its tone) */
+    px_sc.set |= (uint8_t)(1u << px_sc.cur);
     px_sc.cur = (uint8_t)n;
     if (!(px_sc.set >> n & 1u)) { px_sc.mask[n] = (uint16_t)sc_now(); px_sc.set |= (uint8_t)(1u << n); return; }   /* (new: as
                                                                                                      * things are) */
@@ -546,7 +573,10 @@ static void ui_scene_recall(uint32_t n)                /* (CC 65 to 68: px_midi_
 }
 static void sc_fold(void)                              /* (SAVE: the scene playing as it is now) */
 {
-    if (px_sc.set) { px_sc.mask[px_sc.cur] = (uint16_t)sc_now(); px_sc.set |= (uint8_t)(1u << px_sc.cur); }
+    if (px_sc.set) {
+        px_sc.mask[px_sc.cur] = (uint16_t)((px_sc.mask[px_sc.cur] & ~PX_SC_BLOCKS) | sc_now());   /* (53: its tone kept) */
+        px_sc.set |= (uint8_t)(1u << px_sc.cur);
+    }
 }
 static uint8_t sc_sel;                                 /* (SCENES' view: the tile the knob is on) */
 #endif
@@ -772,13 +802,70 @@ static void ui_hz_text(char *b, int off)   /* v42: USER IR's cut frequencies wit
     b_num(b, hz / 10u); b_str(b, "."); b_num(b, hz % 10u); b_str(b, " KHZ");
 }
 #define E_LIST_X 96u                   /* a list setting: its place at the left, the item's name from here */
+#if PX_OWN_FX
+/* test build 53: the GT page's last three rows (ui_gt_row): an item each, SETTINGS first */
+static uint32_t ui_gt_n(int r) { return r == (int)PX_GT_TONE ? PX_GT_NTONE : r == (int)PX_GT_TONE + 1 ? PX_GT_NPICK : PX_GT_NIN; }
+static uint32_t ui_gt_get(int r)
+{
+    const uint32_t v = PRESET.p[PX_B_GATE][PX_GT_TONE];
+    return r == (int)PX_GT_TONE ? px_gt_tone(v) : r == (int)PX_GT_TONE + 1 ? px_gt_pickup(v) : px_gt_input(PRESET.p[PX_B_GATE][PX_GT_INPUT]);
+}
+static void ui_gt_step(int r, int dd)                  /* one item a detent, stopping at the ends */
+{
+    const int i = (int)ui_gt_get(r) + (dd > 0 ? 1 : -1);
+    uint8_t *const g = PRESET.p[PX_B_GATE];
+    if (i < 0 || i >= (int)ui_gt_n(r)) return;
+    if (r == (int)PX_GT_TONE) g[PX_GT_TONE] = (uint8_t)((uint32_t)i + 10u * px_gt_pickup(g[PX_GT_TONE]));
+    else if (r == (int)PX_GT_TONE + 1) g[PX_GT_TONE] = (uint8_t)(px_gt_tone(g[PX_GT_TONE]) + 10u * (uint32_t)i);
+    else g[PX_GT_INPUT] = (uint8_t)i;
+}
+static void ui_gt_text(int r, uint32_t i, char *b)     /* "SETTINGS", "WARM", "HUMBUCK", "+3 DB" */
+{
+    static const char *const PU[3] = {"SINGLE", "HUMBUCK", "P90"};
+    b[0] = 0;
+    if (!i) b_str(b, "SETTINGS");
+    else if (r == (int)PX_GT_TONE) b_str(b, PX_INZ_NAME[PX_INZ_ORDER[i - 1u]]);
+    else if (r == (int)PX_GT_TONE + 1) b_str(b, PU[i - 1u]);
+    else {
+        const int db = (int)i - 1 + PX_IN_DB_MIN;
+        if (db > 0) b_str(b, "+"); else if (db < 0) b_str(b, "-");
+        b_num(b, (uint32_t)(db < 0 ? -db : db)); b_str(b, " DB");
+    }
+}
+static const char *ui_row_name(int k)                  /* a row's label (the GT page's last three: their own) */
+{
+    static const char *const GT[3] = {"GTR TONE", "PICKUP", "INPUT"};
+    return ui_gt_row(k) >= 0 ? GT[k - (int)PX_GT_TONE] : px_param_name((int)ui_blk, PRESET.type[ui_blk], k);
+}
+static uint32_t ui_row_v(int k) { return ui_gt_row(k) >= 0 ? ui_gt_get(k) : PRESET.p[ui_blk][k]; }
+#define UI_ROW_NAME(k) ui_row_name(k)
+#define UI_NP_ROWS ui_nrows()
+#else
+#define UI_ROW_NAME(k) px_param_name((int)ui_blk, PRESET.type[ui_blk], k)
+#define UI_NP_ROWS ui_np()
+#endif
 static void draw_bar(int k)            /* value + bar: the only thing that moves while adjusting */
 {
-    uint32_t y = E_P0 + (uint32_t)k * E_ROW;
+    uint32_t y = E_P0 + (uint32_t)k * UI_RH;
     int sel = (UI_PAGE && (int)ui_item == k + 2), ed = sel && ui_mode == M_EDIT, t = PRESET.type[ui_blk];
     int ln = ui_list_n((int)ui_blk, t, k), ld = ui_loading_row(k);
     uint16_t bg = sel ? C_CARD : UI_BG, vc = ld ? UI_DIM : ed ? UI_ACC : UI_TXT;   /* (the new name stays grey until it plays) */
     uint16_t fc = ed ? UI_ACC : BLK_COL[ui_blk];
+#if PX_OWN_FX
+    if (ui_gt_row(k) >= 0) {                           /* test build 53: GTR TONE, PICKUP, INPUT: the item, a segment each */
+        const uint32_t n = ui_gt_n(k), at = ui_gt_get(k), sw = BAR_W / n;
+        char g[16];
+        ui_gt_text(k, at, g);
+        uc.val[k] = (uint8_t)at;
+        ft_box(E_LIST_X, y + 1u, 230u - E_LIST_X, g, &FT_MD, vc, bg, 2);
+        for (uint32_t i = 0; i < n; i++) {
+            lcd_rect(BAR_X + i * sw, y + UI_BAR_DY, sw - 1u, 4, i == at ? fc : C_BAR);
+            lcd_rect(BAR_X + i * sw + sw - 1u, y + UI_BAR_DY, 1, 4, bg);
+        }
+        if (sw * n < BAR_W) lcd_rect(BAR_X + sw * n, y + UI_BAR_DY, BAR_W - sw * n, 4, bg);
+        return;
+    }
+#endif
     uint32_t v = PRESET.p[ui_blk][k]; if (v > 100u) v = 100u;
     char b[16];
     uc.val[k] = (uint8_t)v;
@@ -793,27 +880,27 @@ static void draw_bar(int k)            /* value + bar: the only thing that moves
         ft_box(E_LIST_X, y + 1u, 230u - E_LIST_X, nm, &FT_MD, vc, bg, 2);
         uint32_t sw = n ? BAR_W / (uint32_t)n : BAR_W;
         for (int i = 0; i < n; i++) {
-            lcd_rect(BAR_X + (uint32_t)i * sw, y + 24u, sw - 1u, 4, i + 1 == at ? fc : C_BAR);
-            lcd_rect(BAR_X + (uint32_t)i * sw + sw - 1u, y + 24u, 1, 4, bg);
+            lcd_rect(BAR_X + (uint32_t)i * sw, y + UI_BAR_DY, sw - 1u, 4, i + 1 == at ? fc : C_BAR);
+            lcd_rect(BAR_X + (uint32_t)i * sw + sw - 1u, y + UI_BAR_DY, 1, 4, bg);
         }
-        if (sw * (uint32_t)n < BAR_W) lcd_rect(BAR_X + sw * (uint32_t)n, y + 24u, BAR_W - sw * (uint32_t)n, 4, n ? bg : C_BAR);
+        if (sw * (uint32_t)n < BAR_W) lcd_rect(BAR_X + sw * (uint32_t)n, y + UI_BAR_DY, BAR_W - sw * (uint32_t)n, 4, n ? bg : C_BAR);
         return;
     }
     if (!px_param_text((int)ui_blk, t, k, (int)v, b)) num3(b, v);   /* "+5TH", "440 MS"... */
     else if (ui_blk == PX_B_CAB && t == PX_CAB_IR && k >= 1) ui_hz_text(b, k == 2 && v == 0u);
     ft_box(140, y + 1u, 90, b, &FT_MD, vc, bg, 2);
     uint32_t w = v * BAR_W / 100u;
-    if (w) lcd_rect(BAR_X, y + 24u, w, 4, fc);
-    if (w < BAR_W) lcd_rect(BAR_X + w, y + 24u, BAR_W - w, 4, C_BAR);
+    if (w) lcd_rect(BAR_X, y + UI_BAR_DY, w, 4, fc);
+    if (w < BAR_W) lcd_rect(BAR_X + w, y + UI_BAR_DY, BAR_W - w, 4, C_BAR);
 }
 static void draw_row(int k)            /* one full setting row */
 {
-    uint32_t y = E_P0 + (uint32_t)k * E_ROW;
-    if (k >= ui_np()) { lcd_rect(0, y, 240, E_ROW, UI_BG); return; }
+    uint32_t y = E_P0 + (uint32_t)k * UI_RH;
+    if (k >= UI_NP_ROWS) { lcd_rect(0, y, 240, UI_RH, UI_BG); return; }
     int sel = (UI_PAGE && (int)ui_item == k + 2);
     uint16_t bg = sel ? C_CARD : UI_BG;
-    ui_rbox(4, y, 232, E_ROW - 1u, 5, bg, UI_BG);
-    lcd_rect(0, y + E_ROW - 1u, 240, 1, UI_BG);
+    ui_rbox(4, y, 232, UI_RH - 1u, 5, bg, UI_BG);
+    lcd_rect(0, y + UI_RH - 1u, 240, 1, UI_BG);
     if (sel) lcd_rect(4, y + 6u, 3, 14, UI_ACC);                 /* accent marker */
     int ld = ui_loading_row(k);
 #if PX_OWN_FX   /* test build 46: a setting that has a control in this preset says its number after its label */
@@ -829,7 +916,7 @@ static void draw_row(int k)            /* one full setting row */
     } else
 #endif
     if (!ui_list_n((int)ui_blk, PRESET.type[ui_blk], k))         /* (a list setting draws its label with its place) */
-        ft_box(BAR_X, y + 5u, 130, ld ? "LOADING" : px_param_name((int)ui_blk, PRESET.type[ui_blk], k), &FT_SM, ld ? UI_ACC : sel ? WHT : UI_DIM, bg, 0);
+        ft_box(BAR_X, y + 5u, 130, ld ? "LOADING" : UI_ROW_NAME(k), &FT_SM, ld ? UI_ACC : sel ? WHT : UI_DIM, bg, 0);
     if (k == 0) uc.row_ld = ld;
     draw_bar(k);
 }
@@ -845,8 +932,8 @@ static void draw_edit(int force)
     if (force || uc.blk != (int)ui_blk || uc.type != type) {
         draw_band(1); draw_type();
         lcd_rect(0, E_TYPE_Y + 26u, 240, E_P0 - E_TYPE_Y - 26u, UI_BG);
-        for (int k = 0; k < PX_NPAR; k++) draw_row(k);
-        lcd_rect(0, E_P0 + PX_NPAR * E_ROW, 240, F_Y - (E_P0 + PX_NPAR * E_ROW), UI_BG);
+        for (int k = 0; k < UI_NROWS; k++) draw_row(k);
+        lcd_rect(0, E_P0 + UI_NROWS * UI_RH, 240, F_Y - (E_P0 + UI_NROWS * UI_RH), UI_BG);
         uc.blk = (int)ui_blk; uc.type = type; uc.np = np; uc.item = (int)ui_item; uc.mode = (int)ui_mode; uc.on = on;
         return;
     }
@@ -858,7 +945,11 @@ static void draw_edit(int force)
     }
     if (uc.on != on || uc.bnum != cur_preset) { draw_band(1); uc.on = on; }
     if (np > 0 && ui_loading_row(0) != uc.row_ld) draw_row(0);
+#if PX_OWN_FX
+    for (int k = 0; k < ui_nrows(); k++) if (uc.val[k] != ui_row_v(k)) draw_bar(k);   /* (test build 53: the GT page's six) */
+#else
     for (int k = 0; k < np; k++) if (uc.val[k] != PRESET.p[ui_blk][k]) draw_bar(k);
+#endif
 }
 
 /* ---- render: sends only what changed to the screen ---- */
@@ -971,6 +1062,10 @@ static void ui_knob(int dd, int fast)
         if (ui_item == 0u) {
             int nt = px_ntypes((int)ui_blk);
             PRESET.type[ui_blk] = (uint8_t)((PRESET.type[ui_blk] + nt + dd) % nt);
+#if PX_OWN_FX
+        } else if (ui_gt_row((int)ui_item - 2) >= 0) {
+            ui_gt_step((int)ui_item - 2, dd);           /* test build 53: GTR TONE, PICKUP, INPUT */
+#endif
         } else if (ui_item >= 2u) {
             int k = (int)ui_item - 2, t = PRESET.type[ui_blk], ln = ui_list_n((int)ui_blk, t, k);
             if (ln) {                                  /* one filled item a detent, at any speed; it stops at the ends */

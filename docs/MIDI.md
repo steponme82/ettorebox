@@ -253,6 +253,32 @@ effect on and off (a Chocolate switch learned on its ON row, a scene, its button
   label), one a preset; a pedal learned there on a WAH's PEDAL, an AUTO WAH's CENTER or a WHAMMY's PEDAL begins with it ticked,
   as the pedal's own learn begins on VOLUME. VOL PEDAL is the **Volume pedal** row, beside the scene rows.
 
+## The preset's input on the GT page, and a scene's tone (the Bluetooth test image, test build 53)
+
+After a gig, GUITAR TONE was "a game changer, more than all the rest sound wise", wanted per guitar, per song and per scene:
+the GT page is now the preset's input, everything that happens before the chain, and SETTINGS' INPUT, GUITAR TONE and PICKUP
+are the defaults.
+
+- **The GT page**: THRESH, RELEASE, PRESET LVL as before, then **GTR TONE** (SETTINGS, or BRIGHT, NATURAL, SMOOTH, WARM, WARMER,
+  PUNCHY, DARK, DARKER, MUDDY), **PICKUP** (SETTINGS, or SINGLE, HUMBUCK, P90) and **INPUT** (SETTINGS, or -10 to +10 dB). SETTINGS
+  is the SETTINGS page's own row. Six rows of 25 px; each of the last three steps one item a detent and stops at its ends. They
+  act whether the gate is on or off. Every factory preset says SETTINGS in all three, and so does every preset saved before.
+- **Where they are kept**: GT's 4th setting holds GTR TONE + 10 x PICKUP (0 each: SETTINGS'), its 5th INPUT (0: SETTINGS',
+  1..21: -10..+10 dB): no new record, the preset's own bytes (`engine/px_dsp.c` `PN_GATE`, `firmware/px_midi.h` `px_in_eff`).
+  Saving, copying, exporting and `EDITED` take them along as any setting. Other firmware never reads them.
+- **A scene's tone**: each scene can have a GUITAR TONE of its own (the web editor's scenes grid, a TONE row: Preset, or one of
+  the nine), over the preset's: a piezo scene on NATURAL in a preset on MUDDY. Kept in the 4 bits of the scene's mask past the
+  blocks (12..15; "OPSC" as it was). Older builds ignore them, and drop them where they store a scene again.
+- **Which wins**: the scene's tone, then the preset's, then SETTINGS'. PICKUP and INPUT: the preset's, then SETTINGS'.
+- **No click**: a change of tone or INPUT (a scene, a preset, the knob, SETTINGS) glides in 24 ms: the gain, and the filter's
+  coefficients in a straight line from the old set to the new, which stays stable (`firmware/px_audio.h` `a_in_sync`, from the main
+  loop: the interrupt code is as it was).
+- **No controller**: GTR TONE, PICKUP and INPUT are a preset's set-up, not played. CC 36 and 37 (GT's 4th and 5th setting) do
+  nothing and are not sent, and 36 is often a 14-bit pedal's second half (CC 4's); holding FX on these rows says `NOT FOR A
+  CONTROLLER`. A scene switches the tone.
+- **The web editor** (editor protocol 8, `INFO` "v42 FX8"): the GT block shows GTR TONE and PICKUP as two lists (one setting holds
+  both) and INPUT as a list; the scenes grid has the TONE row; the MIDI section shows CC 36 and 37 as none.
+
 ## PLAY VIEW: what the switches turn on and off (the Bluetooth test image, test build 47)
 
 SETTINGS' **PLAY VIEW** on **SWITCHES**: on PLAY, in place of the chain's tiles and the selected block, the blocks that this

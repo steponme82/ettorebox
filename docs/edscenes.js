@@ -3,12 +3,13 @@
 // "Scenes"). Four sets of blocks on and off a preset; recalling one switches the blocks to it, as CC 65 to 68 and the
 // footswitches do on the pedal. The scene playing is the blocks as they are now: switching a block changes it, as on the
 // pedal. Another scene's blocks are set here directly. SAVE keeps them with the sound; recalling one is no change. Since test
-// build 50 a scene has a name of up to 3 characters, typed here only: the pedal shows it in place of SCENE n.
+// build 50 a scene has a name of up to 3 characters, typed here only: the pedal shows it in place of SCENE n. Since test build
+// 53 (protocol 8) a guitar tone of its own, over the preset's (the GT page's GTR TONE, else the SETTINGS page's).
 
 import { app, $, h, fill, on, blk, say } from "./edcore.js";
 import { setOn } from "./edsound.js";
 import { refreshState } from "./edpresets.js";
-import { cleanSceneName } from "./pxedit.js";
+import { cleanSceneName, TONES } from "./pxedit.js";
 
 const N = 4;
 let sc = null;          // the pedal's scenes (pxedit.js scenes()), or null: none in this pedal (or not read yet)
@@ -76,6 +77,15 @@ function nameField(n) {
     onkeydown: (e) => { if (e.key === "Enter") f.blur(); } });
   return f;
 }
+// (test build 53) a scene's own guitar tone: "Preset" (0: the preset's), or one of the nine in the pedal's knob order
+function toneField(n) {
+  const s = h("select", { class: "sc-tone", "aria-label": `Guitar tone in scene ${n + 1}`,
+    title: "This scene's guitar tone: Preset follows the preset's (the GT page's GTR TONE, else the SETTINGS page's)",
+    onchange: () => change(() => app.ed.sceneTone(n, +s.value)) },
+    h("option", { value: 0, text: "Preset" }), TONES.map((t, i) => h("option", { value: i + 1, text: t })));
+  s.value = String(sc.tones[n] | 0);
+  return s;
+}
 function grid(order) {
   return h("div", { class: "sc-grid", id: "scgrid" },
     h("div", { class: "sc-wrap" }, h("table", {},
@@ -85,8 +95,10 @@ function grid(order) {
       h("tbody", {}, order.map((b) => h("tr", { style: `--c:${blk(b).color}` },
         h("th", { scope: "row", text: blk(b).label }),
         Array.from({ length: N }, (_, n) => h("td", {}, h("input", { type: "checkbox", checked: !!((maskOf(n) >> b) & 1),
-          "aria-label": `${blk(b).label} in scene ${n + 1}`, onchange: () => toggle(n, b) })))))))),
-    h("p", { class: "dim small", text: `The scene playing is the blocks as they are: switch one and the scene keeps it. Another scene's blocks are set here, and setting one stores it.${sc.names ? " A name of up to 3 characters shows on the pedal in place of SCENE n." : ""} Save the preset to keep its scenes; recalling a scene is not a change.` }),
+          "aria-label": `${blk(b).label} in scene ${n + 1}`, onchange: () => toggle(n, b) }))))),
+        sc.tones && h("tr", { class: "sc-tonerow" }, h("th", { scope: "row", text: "TONE" }),
+          Array.from({ length: N }, (_, n) => h("td", {}, toneField(n))))))),
+    h("p", { class: "dim small", text: `The scene playing is the blocks as they are: switch one and the scene keeps it. Another scene's blocks are set here, and setting one stores it.${sc.names ? " A name of up to 3 characters shows on the pedal in place of SCENE n." : ""}${sc.tones ? " TONE: the scene's own guitar tone; Preset follows the preset's (its GT page, else SETTINGS)." : ""} Save the preset to keep its scenes; recalling a scene is not a change.` }),
     h("div", { class: "sc-forget" }, Array.from({ length: N }, (_, n) => n).filter((n) => stored(n) && n !== sc.cur).map((n) =>
       h("button", { type: "button", class: "btn small", text: `Forget scene ${n + 1}`, title: "Not stored any more: recalled, it takes the blocks as they are",
         onclick: () => change(() => app.ed.sceneForget(n)) }))));

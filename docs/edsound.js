@@ -6,6 +6,7 @@ import { app, $, h, icon, on, emit, blk, blockIndex, typeOf, choices, act, menu,
 import { save, saveAs, revert, exportOne, setCompare, comparing, duplicate, moveTo, restoreFactory } from "./edpresets.js";
 import { knobIndex, indexKnob, KINDS } from "./pxlib.js";
 import { t3kLink } from "./pxt3k.js";
+import { TONES, PICKUPS, GT_TONE_K, gtTone, gtPickup, gtPack } from "./pxedit.js";
 
 let dragging = null;
 
@@ -204,6 +205,19 @@ function startDrag(e, el, b) {
 }
 
 // ---- the block editor ----
+// protocol 8 (test build 53): the GT block's 4th setting holds the guitar's tone and its pickup (tone + 10 x pickup, 0 each:
+// the SETTINGS page's), shown as the pedal shows them: two rows, GTR TONE and PICKUP. Its 5th, INPUT, is a list from the catalogue
+const gtSplit = (b, k) => k === GT_TONE_K && b === blockIndex("GT") && !!(app.ed && app.ed.hasInputPerPreset);
+function gtRows(box, b, k) {
+  const pack = () => gtPack(+$("p3t").value, +$("p3p").value);
+  const row = (id, label, names, title) => {
+    const ctl = h("select", { id, class: "choice", title, onchange: () => { sendParam(b, k, pack()); renderNote(); } },
+      h("option", { value: 0, text: "SETTINGS" }), names.map((n, i) => h("option", { value: i + 1, text: n })));
+    box.append(h("div", { class: "prm one" }, h("label", { for: id, text: label }), ctl));
+  };
+  row("p3t", "GTR TONE", TONES, "This preset's guitar tone (SETTINGS: the SETTINGS page's GUITAR TONE)");
+  row("p3p", "PICKUP", PICKUPS, "The pickup this preset's tone assumes (SETTINGS: the SETTINGS page's PICKUP)");
+}
 // the options of a setting that is a choice; the MODEL and IR settings count the pedal's slots (two can share a name)
 function paramChoices(b, t, k, param) {
   for (const kind of ["nam", "ir"]) {
@@ -249,6 +263,7 @@ function renderPage(fromPush) {
   if (box.dataset.sig !== sig) {
     box.textContent = "";
     T.params.forEach((param, k) => {
+      if (gtSplit(b, k)) { gtRows(box, b, k); return; }
       const id = `p${k}`, opts = paramChoices(b, p.type[b], k, param);
       let ctl;
       if (opts && opts.length <= 4) {
@@ -278,6 +293,7 @@ function renderPage(fromPush) {
     box.dataset.sig = sig;
   }
   T.params.forEach((_, k) => {
+    if (gtSplit(b, k)) { const v = p.p[b][k]; $("p3t").value = gtTone(v); $("p3p").value = gtPickup(v); return; }
     const c = $(`p${k}`), v = p.p[b][k];
     if (c.type === "range") { if (!(fromPush && (c.dataset.held || (document.activeElement === c && pendingParam)))) c.value = v; }
     else if (c.tagName === "SELECT") { const o = optionOf(paramChoices(b, p.type[b], k, T.params[k]), v); c.value = o.value; }
