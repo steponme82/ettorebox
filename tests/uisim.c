@@ -1110,6 +1110,45 @@ int main(int argc, char **argv)
         if (px_pickup != 2u) { printf("midi: PICKUP must step back SINGLE -> P90\n"); return 1; }
         px_pickup = 0;
     }
+    {   /* ettorebox beta 53: SETTINGS' EQ, after PICKUP: BASS, MID, MID FREQ, MID WIDTH, TREBLE. Flat at first; the dB stop at
+         * -12 and +12, MID FREQ at 160 and 5000 HZ, MID WIDTH at VERY WIDE and VERY NARROW (no going round: the next step is
+         * never the far end); each value drawn anew as the knob turns; the names and the longest values fit */
+        static const int8_t F[PX_EQ_N] = {0, 0, 7, 2, 0};
+        midi_push();
+        if (mi_row != MI_EQB || memcmp(px_eq, F, sizeof F)) { printf("midi: EQ BASS must follow PICKUP, the EQ flat at first (MID at 800 HZ, MEDIUM)\n"); return 1; }
+        midi_draw(); px_sent = 0;
+        midi_knob(1); midi_draw();
+        if (px_eq[PX_EQ_BASS] != 1 || px_sent == 0) { printf("midi: EQ BASS must step 0 -> +1 DB, drawn anew\n"); return 1; }
+        for (int i = 0; i < 20; i++) midi_knob(1);
+        if (px_eq[PX_EQ_BASS] != 12) { printf("midi: EQ BASS must stop at +12 DB\n"); return 1; }
+        for (int i = 0; i < 30; i++) midi_knob(-1);
+        if (px_eq[PX_EQ_BASS] != -12) { printf("midi: EQ BASS must stop at -12 DB\n"); return 1; }
+        px_eq[PX_EQ_BASS] = 3;
+        midi_push(); midi_knob(-1); midi_knob(-1);
+        if (mi_row != MI_EQM || px_eq[PX_EQ_MID] != -2) { printf("midi: EQ MID must follow EQ BASS, 0 -> -2 DB\n"); return 1; }
+        midi_push(); midi_knob(1);
+        if (mi_row != MI_EQF || PX_EQ_HZ[px_eq[PX_EQ_FREQ]] != 1000u) { printf("midi: EQ MID FREQ must follow, 800 -> 1000 HZ\n"); return 1; }
+        for (int i = 0; i < 20; i++) midi_knob(1);
+        if (PX_EQ_HZ[px_eq[PX_EQ_FREQ]] != 5000u) { printf("midi: EQ MID FREQ must stop at 5000 HZ\n"); return 1; }
+        for (int i = 0; i < 20; i++) midi_knob(-1);
+        if (PX_EQ_HZ[px_eq[PX_EQ_FREQ]] != 160u) { printf("midi: EQ MID FREQ must stop at 160 HZ\n"); return 1; }
+        px_eq[PX_EQ_FREQ] = 9;                         /* (1250 HZ) */
+        midi_push(); midi_knob(-1);
+        if (mi_row != MI_EQW || px_eq[PX_EQ_WIDTH] != 1) { printf("midi: EQ MID WIDTH must follow, MEDIUM -> WIDE\n"); return 1; }
+        midi_knob(-1); midi_knob(-1);
+        if (px_eq[PX_EQ_WIDTH] != 0) { printf("midi: EQ MID WIDTH must stop at VERY WIDE\n"); return 1; }
+        for (int i = 0; i < 9; i++) midi_knob(1);
+        if (px_eq[PX_EQ_WIDTH] != 4) { printf("midi: EQ MID WIDTH must stop at VERY NARROW\n"); return 1; }
+        midi_knob(-1);
+        midi_push(); midi_knob(1); midi_knob(1);
+        if (mi_row != MI_EQT || px_eq[PX_EQ_TREB] != 2) { printf("midi: EQ TREBLE must follow, 0 -> +2 DB\n"); return 1; }
+        midi_draw(); shot(d, "midi_eq");
+        static const char *const N[5] = {"EQ BASS", "EQ MID", "EQ MID FREQ", "EQ MID WIDTH", "EQ TREBLE"};
+        for (uint32_t i = 0; i < 5u; i++) if (ft_width(&FT_SM, N[i]) > 130u) { printf("midi: the EQ's names must fit\n"); return 1; }
+        for (uint32_t i = 0; i < 5u; i++) if (ft_width(&FT_SM, PX_EQ_WNAME[i]) > 92u) { printf("midi: EQ MID WIDTH's names must fit\n"); return 1; }
+        if (ft_width(&FT_SM, "5000 HZ") > 92u || ft_width(&FT_SM, "-12 DB") > 92u) { printf("midi: the EQ's values must fit\n"); return 1; }
+        memcpy(px_eq, F, sizeof F);
+    }
     {   /* test build 40: TAILS (ON / OFF, to the engine at once) and BT POWER (HIGH, MID, LOW, round) */
         const int t0 = a_tails_n;
         midi_push(); midi_knob(1);
@@ -1231,6 +1270,16 @@ int main(int argc, char **argv)
         midi_knob(1); midi_close();
         if (midi_saved != s0 + 1 || px_out_mode == b0) { printf("midi: OUTPUT changed alone must be saved on leaving\n"); return 1; }
         px_out_mode = 0;
+    }
+    {   /* ettorebox beta 53: an EQ row alone changed: saved on leaving; back as it was: not saved */
+        const int s0 = midi_saved;
+        midi_open(); while (mi_row != MI_EQF) midi_push();
+        midi_knob(-1); midi_close();
+        if (midi_saved != s0 + 1 || px_eq[PX_EQ_FREQ] != 6) { printf("midi: EQ MID FREQ changed alone must be saved on leaving\n"); return 1; }
+        midi_open(); while (mi_row != MI_EQF) midi_push();
+        midi_knob(1); midi_knob(-1); midi_close();
+        if (midi_saved != s0 + 1) { printf("midi: the EQ as it was must not be saved again\n"); return 1; }
+        px_eq[PX_EQ_FREQ] = 7;
     }
     {   /* test build 47: the footswitches walk the rows (the right one down, the left one up, round); PLAY VIEW alone
          * changed: saved on leaving */

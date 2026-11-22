@@ -338,22 +338,27 @@ export class Editor {
   // Protocol 6 (test builds 46 to 49): more, after the routing: { tone: GUITAR TONE (0 NATURAL, 1 SMOOTH, 2 WARM, 3 WARMER,
   // 4 PUNCHY, 5 DARK, 6 DARKER, 7 MUDDY, 8 BRIGHT), pickup: PICKUP (0 SINGLE, 1 HUMBUCK, 2 P90), view: PLAY VIEW (0 CHAIN,
   // 1 SWITCHES, 2 SCENES), sceneWins: SCENE+SWITCH (false SWITCH WINS), feetPresets: SCENE FOOTSW (false SCENES), volAt (protocol
-  // 7, test build 51): VOL PEDAL, where the expression pedal's volume acts (0 AT INPUT, 1 BEFORE DLY) }, null before
+  // 7, test build 51): VOL PEDAL, where the expression pedal's volume acts (0 AT INPUT, 1 BEFORE DLY) }, null before.
+  // Protocol 8 (ettorebox beta 53): eq, SETTINGS' EQ, { bass, mid, treble (dB), freq, width (indices) }, null from a pedal before
   get hasPedalLearn() { return !!(this.info && this.info.proto >= 5); }
   _map(r) {
     const q = new Reader(r), rc = q.b(), each = !!q.b(), inputDb = q.b() - 10, fl = q.b(), n = q.b(), entries = [];
     for (let i = 0; i < n; i++) { const on = q.b(), src = q.b(), dst = q.b(), mode = q.b(); entries.push(on ? { src, dst, mode } : null); }
     const ur = q.i < q.a.length ? q.b() : -1;   // (test build 43: after the entries)
     const tb = q.i < q.a.length ? q.b() : -1, vb = q.i < q.a.length ? q.b() : -1;   // (protocol 6: then two more)
+    const eb = q.i + 5 <= q.a.length ? [q.b(), q.b(), q.b(), q.b(), q.b()] : null;   // (protocol 8, ettorebox beta 53: then the EQ)
     return { rc, each, inputDb, tails: !!(fl & 1), btPower: (fl >> 1) & 3, outMode: (fl >> 3) & 3, entries,
       usb: ur < 0 ? null : { send: ur & 3, cut: !!(ur & 4), ret: (ur >> 3) & 15 },
-      more: tb < 0 || vb < 0 ? null : { tone: tb & 15, pickup: (tb >> 4) & 3, view: vb & 3, sceneWins: !!(vb & 4), feetPresets: !!(vb & 8), volAt: (vb >> 4) & 1 } };
+      more: tb < 0 || vb < 0 ? null : { tone: tb & 15, pickup: (tb >> 4) & 3, view: vb & 3, sceneWins: !!(vb & 4), feetPresets: !!(vb & 8), volAt: (vb >> 4) & 1 },
+      eq: eb && { bass: eb[0] - 12, mid: eb[1] - 12, freq: eb[2], width: eb[3], treble: eb[4] - 12 } };
   }
   async pedalMap() { return this._map(await this.request(C.MAP)); }
   // inputDb: SETTINGS' INPUT, -10..+10 dB (the guitar's level into the chain); tails: TAILS; btPower: 0 HIGH, 1 MID, 2 LOW;
   // outMode: OUTPUT, 0 MONO, 1 STEREO (DELAY's and REVERB's wet to the sides), 2 GTR+BASS (the guitar left, LOW OCTAVE's octave right)
   // more (protocol 6): as _map gives it; null leaves those settings as they are (the routing must then be sent too: usb)
-  async setPedalMap(each, entries, inputDb = 0, tails = false, btPower = 0, outMode = 0, usb = null, more = null) {
+  // eq (protocol 8, ettorebox beta 53): SETTINGS' EQ, as _map gives it, { bass, mid, treble: -12..+12 dB, freq: 0..15
+  // (EQ_HZ's), width: 0..4 (VERY WIDE .. VERY NARROW) }; null leaves it as it is (usb and more must then be sent too)
+  async setPedalMap(each, entries, inputDb = 0, tails = false, btPower = 0, outMode = 0, usb = null, more = null, eq = null) {
     const a = [1, each ? 1 : 0, Math.max(0, Math.min(20, Math.round(inputDb) + 10)),
       (tails ? 1 : 0) | (Math.max(0, Math.min(2, btPower | 0)) << 1) | (Math.max(0, Math.min(2, outMode | 0)) << 3)];
     for (const e of entries) a.push(...(e ? [1, e.src, e.dst, e.mode] : [0, 0, 0, 0]));
@@ -361,6 +366,8 @@ export class Editor {
     if (usb && more) a.push(Math.max(0, Math.min(8, more.tone | 0)) | Math.max(0, Math.min(2, more.pickup | 0)) << 4,
       Math.max(0, Math.min(2, more.view | 0)) | (more.sceneWins ? 4 : 0) | (more.feetPresets ? 8 : 0) |
       (this.hasTwoJobs && more.volAt ? 16 : 0));   // (bit 4 only to protocol 7: a test build 50 pedal refuses it)
+    const cl = (v, lo, hi) => Math.max(lo, Math.min(hi, Math.round(+v) || 0));
+    if (usb && more && eq) a.push(cl(eq.bass, -12, 12) + 12, cl(eq.mid, -12, 12) + 12, cl(eq.freq, 0, 15), cl(eq.width, 0, 4), cl(eq.treble, -12, 12) + 12);
     return this._map(await this.request(C.MAP, a, 4000));
   }
   // protocol 6 (test builds 46 to 49): a preset's own controls learned on the pedal (firmware/px_midi.h mid_pl), which its rows

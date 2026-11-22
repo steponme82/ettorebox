@@ -140,6 +140,8 @@ RAM_FW="a_enc a_dec a_block a_send a_collect a_commit dsp_block dsp_out dsp_load
   fm1_alnk0_irq tn_capture fm1_cpu1_run fm1_cpu1_wait fm1_cpu1_retire a_hrun a_hwait b_ticks memcpy memset"
 # test build 21, the Bluetooth audio image: the NAM's frame-split helper job too, which the second core runs (from the flash up to 20)
 [ -n "$OP_BT" ] && RAM_DSP="$RAM_DSP pxn_help_job"
+# ettorebox beta 53: SETTINGS' EQ's filters over the output block, from dsp_out (px_audio.h a_eq_run)
+[ -n "$OP_BT" ] && RAM_FW="$RAM_FW a_eq_run"
 python3 "$HERE/../tools/ramcode.py" "$O/px_dsp.o" --plain $RAM_DSP
 python3 "$HERE/../tools/ramcode.py" "$O/openpocket.o" $RAM_FW
 # a direct call between the flash code and the RAM code is out of the CPU's call range: refuse it with its name

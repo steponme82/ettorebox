@@ -11,6 +11,14 @@
 #include "px_dsp.h"
 #include "../firmware/px_midi.h"
 #if PX_OWN_FX
+/* ettorebox beta 53: one biquad's gain in dB at f Hz (44.1 kHz), c = b0 b1 b2 a1 a2 (the EQ's test) */
+static double eq_db(const float *c, double f)
+{
+    const double w = 2.0 * 3.14159265358979 * f / 44100.0, c1 = cos(w), s1 = sin(w), c2 = cos(2.0 * w), s2 = sin(2.0 * w);
+    const double nr = c[0] + c[1] * c1 + c[2] * c2, ni = -(c[1] * s1 + c[2] * s2);
+    const double dr = 1.0 + c[3] * c1 + c[4] * c2, di = -(c[3] * s1 + c[4] * s2);
+    return 10.0 * log10((nr * nr + ni * ni) / (dr * dr + di * di));
+}
 static int a_in_gain_n;                                  /* test build 39: INPUT applied (px_audio.h's, counted here) */
 static void a_in_gain_apply(void) { a_in_gain_n++; }
 static int a_tails_n;                                    /* test build 40: TAILS to the engine (px_audio.h's, counted here) */
@@ -553,6 +561,56 @@ int main(void)
             CHECK(ST_SI_OFF + ST_SI_LEN <= 0xF00u + 0x1000u, "scene steps: the record ends under the loader's area (0x1F00)");
             memset(px_si_tab, 0, sizeof px_si_tab);
             CHECK(st_commit() == 0, "scene steps: cleared again");
+        }
+        {   /* ettorebox beta 53: SETTINGS' EQ. Its filters: BASS a shelf at 100 Hz, MID a peak at MID FREQ, TREBLE a shelf at
+             * 3.5 kHz, each the dB asked where it acts and 0 dB far from it; the bands at 0 dB off. Its record ("OPEQ", after the
+             * scenes' INPUT steps): kept through a power cycle; a CRC that fails, a value out of range, a copy without it
+             * (the builds before): flat; it ends under the loader's area */
+            float c[15];
+            memcpy(px_eq, PX_EQ_FLAT, sizeof px_eq);
+            CHECK(px_eq_coefs(44100.0f, c) == 0u, "EQ: flat, no band on");
+            px_eq[PX_EQ_BASS] = 6; px_eq[PX_EQ_MID] = -6; px_eq[PX_EQ_FREQ] = 7; px_eq[PX_EQ_WIDTH] = 2; px_eq[PX_EQ_TREB] = 4;
+            CHECK(px_eq_coefs(44100.0f, c) == 7u, "EQ: BASS, MID and TREBLE on");
+            CHECK(fabs(eq_db(c, 20.0) - 6.0) < 0.3 && fabs(eq_db(c, 100.0) - 3.0) < 0.3 && fabs(eq_db(c, 5000.0)) < 0.3,
+                  "EQ: BASS +6 DB below 100 Hz, +3 at it, nothing at 5 kHz");
+            CHECK(fabs(eq_db(c + 5, 800.0) + 6.0) < 0.05 && fabs(eq_db(c + 5, 80.0)) < 0.5 && fabs(eq_db(c + 5, 8000.0)) < 0.5,
+                  "EQ: MID -6 DB at 800 Hz, nothing a few octaves away");
+            CHECK(fabs(eq_db(c + 10, 16000.0) - 4.0) < 0.3 && fabs(eq_db(c + 10, 3500.0) - 2.0) < 0.3 && fabs(eq_db(c + 10, 200.0)) < 0.1,
+                  "EQ: TREBLE +4 DB at the top, +2 at 3.5 kHz, nothing at 200 Hz");
+            px_eq[PX_EQ_WIDTH] = 4;
+            (void)px_eq_coefs(44100.0f, c);
+            const double narrow = eq_db(c + 5, 1100.0);
+            px_eq[PX_EQ_WIDTH] = 0;
+            (void)px_eq_coefs(44100.0f, c);
+            CHECK(narrow > -2.0 && eq_db(c + 5, 1100.0) < -4.5, "EQ: MID WIDTH, VERY NARROW to VERY WIDE, around 800 Hz");
+            CHECK(!px_eq_set(PX_EQ_BASS, 13) && !px_eq_set(PX_EQ_FREQ, 16) && !px_eq_set(PX_EQ_WIDTH, -1) && px_eq_set(PX_EQ_TREB, -12),
+                  "EQ: a value out of range is refused");
+            px_eq[PX_EQ_WIDTH] = 3; px_eq[PX_EQ_TREB] = 4;
+            CHECK(st_commit() == 0, "EQ: a commit");
+            memcpy(px_eq, PX_EQ_FLAT, sizeof px_eq);
+            reboot();
+            CHECK(px_eq[PX_EQ_BASS] == 6 && px_eq[PX_EQ_MID] == -6 && px_eq[PX_EQ_FREQ] == 7 && px_eq[PX_EQ_WIDTH] == 3 && px_eq[PX_EQ_TREB] == 4,
+                  "EQ: it survives a power cycle");
+            nor[st_cur + ST_EQ_OFF + 4u] ^= 0x01;
+            reboot();
+            CHECK(!memcmp(px_eq, PX_EQ_FLAT, sizeof px_eq) && px_midi_map_count() == 2, "EQ: a record whose CRC fails: flat, the rest kept");
+            nor[st_cur + ST_EQ_OFF + 4u] ^= 0x01;
+            reboot();
+            CHECK(px_eq[PX_EQ_BASS] == 6, "EQ: the record read again");
+            {
+                uint8_t *const r = nor + st_cur + ST_EQ_OFF;
+                r[4] = 25;                             /* (BASS +13 DB, with its CRC) */
+                const uint32_t k = ota_crc16(r + 4, PX_EQ_N, 0);
+                r[4u + PX_EQ_N] = (uint8_t)k; r[5u + PX_EQ_N] = (uint8_t)(k >> 8);
+                reboot();
+                CHECK(!memcmp(px_eq, PX_EQ_FLAT, sizeof px_eq), "EQ: a value no build writes: flat");
+            }
+            memset(nor + st_cur + ST_EQ_OFF, 0xFF, ST_EQ_LEN);
+            reboot();
+            CHECK(!memcmp(px_eq, PX_EQ_FLAT, sizeof px_eq), "EQ: a copy without the record (the builds before): flat");
+            CHECK(ST_EQ_OFF == ST_SI_OFF + ST_SI_LEN + 2u && ST_EQ_OFF + ST_EQ_LEN <= 0xF00u + 0x1000u,
+                  "EQ: the record after the scene steps, ending under the loader's area (0x1F00)");
+            CHECK(st_commit() == 0, "EQ: flat again");
         }
         {   /* test build 50: the scenes' names ("OPN1" presets 1-26, "OPN2" 27-52): a save writes the playing preset's, the
              * others go over untouched, a commit that is no save changes none, a FACTORY reset drops its own; a record whose

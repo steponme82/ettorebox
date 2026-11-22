@@ -266,6 +266,22 @@ scale). The pedal listens to your guitar and tells you how far you are from it:
 Gain staging, the easy way: one input check on SETTINGS for your main guitar; then, only where it's needed, one on a
 preset (another guitar, a synth sound) or a scene (a piezo).
 
+### The general EQ: every preset at once
+
+A room, a PA, a small speaker or a pair of headphones each colour the sound. SETTINGS' general EQ makes up for it in every preset
+at once, so you don't touch the presets themselves. It sits at the very end, after the whole chain and before the volume.
+Five rows on SETTINGS, after PICKUP:
+
+- **EQ BASS:** -12 DB to +12 DB, a shelf at 100 Hz (the boom of a room, a speaker's missing lows).
+- **EQ MID:** -12 DB to +12 DB, a peak or a dip at **EQ MID FREQ** (160 HZ to 5000 HZ), as wide as **EQ MID WIDTH** says
+  (VERY WIDE, WIDE, MEDIUM, NARROW, VERY NARROW). A narrow dip takes out one resonance; a wide one a whole region.
+- **EQ TREBLE:** -12 DB to +12 DB, a shelf at 3.5 kHz (a dull PA, harsh headphones).
+
+All three at 0 DB is off: nothing is done to the sound. The EQ shapes the guitar only: the phone's music goes around it,
+and so does GTR+BASS's bass on the right. In STEREO both sides get it. Cut rather than boost where you can: a boost also
+raises the level, which reaches the output's limit sooner. A change is heard at once and kept when you leave SETTINGS; the
+editor has the same rows.
+
 ### Factory presets
 
 1 to 24 are factory sounds (clean, crunch, lead, high gain, effects). 25 to 52 are USER slots to build your own, each a
@@ -458,14 +474,14 @@ One phone for music (A2DP), the Chocolate (the pedal as its central) and the edi
 - **MIDI:** what is connected and what it sends, the pedal's map named for the current preset, the controls learned in the
   editor (up to 8, kept in the pedal, in every preset), the preset's own (their heel and toe, and the box **or VOLUME when
   SFX is off**), and these settings: SWITCH, INPUT, TAILS, BT POWER, OUTPUT, USB SEND, USB RETURN, GUITAR, GUITAR TONE,
-  PICKUP, PLAY VIEW, the two scene rows and **Volume pedal**. CHANNEL, SEND, CLOCK > DELAY, USB AUDIO and USB PORT are set
-  on the pedal.
+  PICKUP, PLAY VIEW, the two scene rows, **Volume pedal** and the **general EQ**. CHANNEL, SEND, CLOCK > DELAY, USB AUDIO and USB PORT
+  are set on the pedal.
 
 Keys: `/` searches the presets, `[` and `]` step to the previous and next one, Ctrl or ⌘ + S saves, F2 renames the preset
 chosen in the list. The connection's details (click the pill at the top right) name the firmware: `ettorebox (OpenPocket
-v42 FX7)`.
+v42 FX8)`.
 
-The protocol: [EDITOR-PROTOCOL.md](EDITOR-PROTOCOL.md) (protocol 7 for this firmware).
+The protocol: [EDITOR-PROTOCOL.md](EDITOR-PROTOCOL.md) (protocol 8 for this firmware).
 
 ## 10. SETTINGS, row by row
 
@@ -482,6 +498,11 @@ The protocol: [EDITOR-PROTOCOL.md](EDITOR-PROTOCOL.md) (protocol 7 for this firm
 | INPUT | -10 DB to +10 DB | 0 DB | the guitar's level into the chain (where a preset's GT page says SETTINGS); its bottom line is the input check, hold FX sets it |
 | GUITAR TONE | BRIGHT, NATURAL, SMOOTH, WARM, WARMER, PUNCHY, DARK, DARKER, MUDDY | NATURAL | the pickup's load, by its sound (where the scene and the preset say nothing) |
 | PICKUP | SINGLE, HUMBUCK, P90 | SINGLE | the pickup GUITAR TONE assumes (where the preset says SETTINGS) |
+| EQ BASS | -12 DB to +12 DB | 0 DB | a shelf at 100 Hz over the whole guitar, every preset ([The general EQ](#the-general-eq-every-preset-at-once)) |
+| EQ MID | -12 DB to +12 DB | 0 DB | a peak or a dip at EQ MID FREQ |
+| EQ MID FREQ | 160 HZ to 5000 HZ | 800 HZ | where EQ MID acts |
+| EQ MID WIDTH | VERY WIDE, WIDE, MEDIUM, NARROW, VERY NARROW | MEDIUM | how wide EQ MID acts |
+| EQ TREBLE | -12 DB to +12 DB | 0 DB | a shelf at 3.5 kHz |
 | TAILS | OFF, ON | OFF | the delay and the reverb ring out when they go off and across presets |
 | BT POWER | HIGH, MID, LOW | HIGH | the radio's transmit power |
 | OUTPUT | MONO, STEREO, GTR+BASS | MONO | STEREO: the delay, the reverb, the modulations and the phone's music spread; GTR+BASS: the guitar left, LOW OCTAVE's bass right |

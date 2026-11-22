@@ -1657,6 +1657,19 @@ which blocks of the preset the level changes; holding FX there sets it from 4 se
 SETTINGS. The details: [MIDI.md](MIDI.md), "The preset's input on the GT page, and a scene's tone". Also: the installer and
 editor pages no longer zoom (pinch or double tap), as the RC-10R app.
 
+Then, after the first try on the pedal:
+
+- **The input check heard nothing** (`NOTHING HEARD`, no level on the INPUT CHECK page): the image never handed the check the
+  guitar's peak (`firmware/openpocket.c` had no `PX_IN_PEAK`, so `ui.h`'s stand-in for the simulators read 0). Now it does, and
+  `ui.h` refuses to build the Bluetooth image without it.
+- **SETTINGS' EQ**, one for every preset, for the room, the PA, the headphones: EQ BASS (a shelf at 100 Hz), EQ MID at EQ MID
+  FREQ (160 to 5000 Hz) as wide as EQ MID WIDTH, EQ TREBLE (a shelf at 3.5 kHz), -12 to +12 dB each, after PICKUP. It runs
+  over the guitar at the output, after the chain and before the volume (both sides in STEREO; the phone's music and GTR+BASS's
+  bass go around it). All at 0 dB it is off, the sound bit for bit as before. The main loop designs the filters
+  (`firmware/px_midi.h` `px_eq_coefs`) and hands them over as the knobs are; the output stage (`firmware/px_audio.h`
+  `a_eq_run`, RAM code) runs only the bands not at 0 dB. Kept in the store ("OPEQ", 12 bytes at 0x1EF0); the editor sets it
+  (`MAP`'s five EQ bytes, protocol 8).
+
 ### What to check
 
 1. A preset as it was: the GT page shows SETTINGS in its last three rows, and the sound is as in beta 52.
@@ -1668,6 +1681,10 @@ editor pages no longer zoom (pinch or double tap), as the RC-10R app.
 5. The input check: on GT's INPUT row play hard, the bottom line says LOW, GOOD or HOT; hold FX on INPUT, play 4 seconds,
    PUSH: INPUT set. Again with a scene playing, the knob on THIS SCENE: its step. And SETTINGS' INPUT row the same way.
 6. MONO SYNTH after the input check on its preset (it aims 4 dB higher there: the tracker's gate is a fixed level).
+7. The input check now hears the guitar: on the INPUT CHECK page the level moves as you play, and the verdict comes.
+8. SETTINGS' EQ: EQ TREBLE +6 DB, then EQ BASS -6 DB: heard at once, in every preset, no click. EQ MID -9 DB at 400 HZ,
+   VERY NARROW, then VERY WIDE: a notch, then a scoop. Back to 0 DB everywhere: the sound as before. Leave SETTINGS, switch
+   off and on: the EQ is kept. The editor's two EQ rows show it and set it.
 
 ## Checked on a computer
 

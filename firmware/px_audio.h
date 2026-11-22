@@ -147,6 +147,39 @@ static void a_in_sync(uint32_t now, const px_preset_t *p, uint32_t scene_tone, i
     if (f >= 1.0f) { a_ins.gliding = 0; if (a_ins.off_end) a_inz_on = 0; }
 }
 #endif
+#if PX_OWN_FX
+/* ettorebox beta 53: SETTINGS' EQ (px_midi.h px_eq). The main loop designs its three filters (px_eq_coefs) and hands them over as
+ * the knobs are (a_eqpend, as audio_apply's a_kpend): dsp_out takes the set before the mutes (the bands' state kept: no click;
+ * a band gone flat cleared) and runs the bands not at 0 dB over the left, and STEREO's right (GTR+BASS's bass goes around it) */
+static float a_eqc[15], a_eqn[15], a_eqz[12];          /* the coefficients run, the next ones; the state (left, then right) */
+static volatile uint8_t a_eqpend;
+static uint8_t a_eqm, a_eqnm;                          /* the bands on (a bit each): as run, as designed */
+static uint32_t a_eqw = ~0u;                           /* (the settings designed last) */
+static void a_eq_sync(void)                            /* (main loop, every pass) */
+{
+    const uint32_t w = px_eq_pack();
+    if (w == a_eqw || a_eqpend) return;
+    a_eqw = w;
+    a_eqnm = (uint8_t)px_eq_coefs(g_eng.sr, a_eqn);
+    __asm__ volatile("" ::: "memory");                 /* (the set written before the flag) */
+    a_eqpend = 1;
+}
+static __attribute__((noinline)) void a_eq_run(float *z, float *b)   /* (RAM code, dsp_out's) the bands on, over a block */
+{
+    const float *c = a_eqc;
+    for (uint32_t k = 0; k < 3u; k++, c += 5, z += 2) {
+        if (!(a_eqm >> k & 1u)) continue;
+        const float b0 = c[0], b1 = c[1], b2 = c[2], a1 = c[3], a2 = c[4];
+        float z1 = z[0], z2 = z[1];
+        for (uint32_t i = 0; i < A_FR; i++) {
+            const float x = b[i], y = b0 * x + z1;
+            z1 = b1 * x - a1 * y + z2; z2 = b2 * x - a2 * y;
+            b[i] = y;
+        }
+        z[0] = z1; z[1] = z2;
+    }
+}
+#endif
 #if OP_BT_AUDIO
 /* output, 24-bit right-aligned, in the RAM code window's free end (app-bt.ld .bss_hi), where test builds 12 and 13 kept two
  * slots against the callbacks' order; v42's px_aorder.h sends each block in its own interrupt whichever callback comes first */
@@ -291,6 +324,16 @@ static void dsp_out(void)                              /* a_out -> a_res: safety
 #endif
     if (a_nan) for (uint32_t i = 0; i < A_FR; i++) a_out[i] = 0.0f;
     if (a_mute) for (uint32_t i = 0; i < A_FR; i++) a_out[i] = 0.0f;
+#if PX_OWN_FX
+    if (a_eqpend) {                                    /* (ettorebox beta 53: SETTINGS' EQ, the set the main loop designed) */
+        for (uint32_t i = 0; i < 15u; i++) a_eqc[i] = a_eqn[i];
+        for (uint32_t i = 0; i < 12u; i++) if (!(a_eqnm >> (i % 6u >> 1) & 1u)) a_eqz[i] = 0.0f;   /* (a flat band: cleared) */
+        a_eqm = a_eqnm;
+        __asm__ volatile("" ::: "memory");             /* (the set read before the flag lets the main loop write the next) */
+        a_eqpend = 0;
+    }
+    if (a_eqm) { a_eq_run(a_eqz, a_out); if (a_mode == 1u) a_eq_run(a_eqz + 6, a_outr); }
+#endif
     {   /* tuner mute, with a short ramp both ways (no click) */
         float tg = a_tmute ? 0.0f : 1.0f;
         if (a_mg != tg) {

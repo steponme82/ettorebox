@@ -456,6 +456,9 @@ static UI_SMALL void lg_draw(void)
  * INPUT cannot help: the guitar's volume can. The GT page's INPUT row says it in its footer, SETTINGS' INPUT row on its LAST
  * line; hold FX on either: the pedal sets it (ig, below) */
 #ifndef PX_IN_PEAK
+#if OP_BT_AUDIO
+#error "the Bluetooth image gives the input check its peak (openpocket.c PX_IN_PEAK)"
+#endif
 #define PX_IN_PEAK() 0.0f                              /* (the simulators': nothing heard, unless they give their own) */
 #endif
 enum { IC_QUIET, IC_LOW, IC_GOOD, IC_HOT, IC_CLIP };
@@ -1409,8 +1412,9 @@ static void save_confirm(void)
  * scrolls with the selected one, a bar at the right edge saying where. USB RETURN's knob moves the return along this preset's
  * chain: INPUT, before each block after the first, OUTPUT */
 #if PX_OWN_FX
-enum { MI_CHAN, MI_SEND, MI_CLOCK, MI_EACH, MI_LIVE, MI_SCRULE, MI_SCFEET, MI_VOLAT, MI_INPUT, MI_INZ, MI_PICKUP, MI_TAILS, MI_BTPWR,
-       MI_OUT, MI_USB,
+enum { MI_CHAN, MI_SEND, MI_CLOCK, MI_EACH, MI_LIVE, MI_SCRULE, MI_SCFEET, MI_VOLAT, MI_INPUT, MI_INZ, MI_PICKUP,
+       MI_EQB, MI_EQM, MI_EQF, MI_EQW, MI_EQT,   /* (ettorebox beta 53: the EQ, px_midi.h px_eq's order) */
+       MI_TAILS, MI_BTPWR, MI_OUT, MI_USB,
 #if OP_UAUDIO
        MI_UAUDIO, MI_USEND, MI_URET, MI_UGTR,
 #endif
@@ -1437,6 +1441,7 @@ static uint32_t mi_row, mi_shown_hash = ~0u;
 static uint8_t mi_orig, mi_ua;
 #if PX_OWN_FX
 static uint8_t mi_set_orig, mi_out_orig, mi_route_orig, mi_inz_orig, mi_live_orig;
+static uint32_t mi_eq_orig;                     /* (ettorebox beta 53: the EQ as SETTINGS found it) */
 #endif
 #if PX_OWN_FX && OP_UAUDIO
 static uint32_t ed_ua_stat(uint32_t k);         /* px_uaudio.h: the streams' state (the USB line) */
@@ -1462,6 +1467,7 @@ static void midi_open(void)
 #if PX_OWN_FX
     mi_set_orig = px_set_pack(); mi_out_orig = px_out_mode; mi_route_orig = px_ua_route; mi_inz_orig = px_inz_pack();
     mi_live_orig = (uint8_t)(px_live | px_sc_rule << 2 | px_sc_feet << 3 | px_vol_at << 4);   /* (51: VOL PEDAL) */
+    mi_eq_orig = px_eq_pack();
 #endif
     lcd_rect(0, 0, 240, 240, UI_BG);
     lcd_rect(0, 0, 240, 4, UI_ACC); lcd_rect(0, 27, 240, 3, UI_ACC); lcd_rect(0, 4, 8, 23, UI_ACC);
@@ -1484,6 +1490,7 @@ static UI_SMALL void midi_draw(void)
     h ^= ((uint32_t)px_usb_foot << 4 | px_uh.st) * 0xC2B2AE35u;   /* (test build 41: the row, and what the host sees) */
     h ^= (uint32_t)px_out_mode * 0x165667B1u;        /* (test build 42: OUTPUT) */
     h ^= (uint32_t)px_ua_route * 0xD3A2646Cu;        /* (test build 43: USB SEND, USB RETURN, GUITAR) */
+    h ^= px_eq_pack() * 0x7FEB352Du;                 /* (ettorebox beta 53: the EQ) */
     h ^= ((uint32_t)px_inz_pack() | (uint32_t)px_live << 8 | (uint32_t)px_sc_rule << 10 | (uint32_t)px_sc_feet << 11 |
           (uint32_t)px_vol_at << 12) * 0x2545F491u;   /* (test build 47: GUITAR TONE and PICKUP, which 46
                                                                                    * never redrew; PLAY VIEW) */
@@ -1503,7 +1510,7 @@ static UI_SMALL void midi_draw(void)
 #if PX_OWN_FX
     static const char *const NAME[MI_ROWS] = {"CHANNEL", "SEND", "CLOCK > DELAY",
                                               "SWITCH", "PLAY VIEW", "SCENE+SWITCH", "SCENE FOOTSW", "VOL PEDAL", "INPUT", "GUITAR TONE",
-                                              "PICKUP",
+                                              "PICKUP", "EQ BASS", "EQ MID", "EQ MID FREQ", "EQ MID WIDTH", "EQ TREBLE",
                                               "TAILS", "BT POWER", "OUTPUT", "USB PORT",
 #if OP_UAUDIO
                                               "USB AUDIO", "USB SEND", "USB RETURN", "GUITAR",
@@ -1530,8 +1537,14 @@ static UI_SMALL void midi_draw(void)
     v[MI_EACH][0] = 0;
     b_str(v[MI_EACH], mid_cfg.each ? "LATCH" : "MOMENT");
     v[MI_INPUT][0] = 0;
-    if (px_in_db > 0) b_str(v[MI_INPUT], "+"); else if (px_in_db < 0) b_str(v[MI_INPUT], "-");
-    b_num(v[MI_INPUT], (uint32_t)(px_in_db < 0 ? -px_in_db : px_in_db)); b_str(v[MI_INPUT], " DB");
+    ig_db_text(v[MI_INPUT], px_in_db);
+    for (uint32_t k = 0; k < PX_EQ_N; k++) {           /* (ettorebox beta 53: the EQ: "+3 DB", "800 HZ", "MEDIUM") */
+        char *const t = v[MI_EQB + k];
+        t[0] = 0;
+        if (k == PX_EQ_FREQ) { b_num(t, PX_EQ_HZ[px_eq[k] & 15]); b_str(t, " HZ"); }
+        else if (k == PX_EQ_WIDTH) b_str(t, PX_EQ_WNAME[px_eq[k] % 5]);
+        else ig_db_text(t, px_eq[k]);
+    }
     {   /* test build 46: GUITAR TONE, the pickup's load (px_audio.h a_inz_apply), by its sound (47), and the pickup it assumes */
         static const char *const PU[3] = {"SINGLE", "HUMBUCK", "P90"};
         static const char *const LV[3] = {"CHAIN", "SWITCHES", "SCENES"};
@@ -1665,7 +1678,8 @@ static void midi_close(void)
     ui_mode = M_CHAIN; ui_item = 0;
 #if PX_OWN_FX
     if (px_midi_cfg_pack(&mid_cfg) != mi_orig || mi_ua != px_ua_on || px_set_pack() != mi_set_orig || px_out_mode != mi_out_orig ||
-        px_ua_route != mi_route_orig || px_inz_pack() != mi_inz_orig || (px_live | px_sc_rule << 2 | px_sc_feet << 3 | px_vol_at << 4) != mi_live_orig) {
+        px_ua_route != mi_route_orig || px_inz_pack() != mi_inz_orig || (px_live | px_sc_rule << 2 | px_sc_feet << 3 | px_vol_at << 4) != mi_live_orig ||
+        px_eq_pack() != mi_eq_orig) {
         px_ua_on = mi_ua; midi_persist();
     }
 #else
@@ -1690,6 +1704,8 @@ static void midi_knob(int dd)
     else if (mi_row == MI_SCFEET) px_sc_feet ^= 1u;
     else if (mi_row == MI_VOLAT) { px_vol_at ^= 1u; PX_EXP_PLACE(px_vol_at); }   /* (test build 51: heard at once, saved on leaving) */
     else if (mi_row == MI_PICKUP) { px_pickup = (uint8_t)((px_pickup + (dd > 0 ? 1u : 2u)) % 3u); a_inz_apply(); }
+    else if (mi_row >= MI_EQB && mi_row <= MI_EQT) px_eq_step(mi_row - MI_EQB, dd);   /* (ettorebox beta 53: heard at once, the
+                                                       * main loop's a_eq_sync; saved on leaving) */
     else if (mi_row == MI_TAILS) { px_tails ^= 1u; a_tails_apply(); }
     else if (mi_row == MI_BTPWR) { px_bt_pwr = (uint8_t)((px_bt_pwr + (dd > 0 ? 1u : 2u)) % 3u); PX_BT_POWER_APPLY(); }
     else if (mi_row == MI_OUT) px_out_mode = (uint8_t)((px_out_mode + (dd > 0 ? 1u : 2u)) % 3u);   /* test build 42: at once, saved on leaving */

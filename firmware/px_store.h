@@ -174,6 +174,30 @@ static void st_si_load(uint32_t base)                  /* the copy's steps, or n
     if ((b[T] | b[T + 1u] << 8) != (ota_crc16(b + 4, PX_SI_BYTES, 0) & 0xFFFFu)) return;
     memcpy(px_si_tab, b + 4, PX_SI_BYTES);
 }
+/* ettorebox beta 53: SETTINGS' EQ (px_midi.h px_eq), after the scenes' INPUT steps: "OPEQ", the five values (each from 0: BASS
+ * and MID 0..24 for -12..+12 dB, MID FREQ 0..15, MID WIDTH 0..4, TREBLE 0..24), the CRC, a spare byte: 12 bytes at 0x1EF0, 4
+ * left under 0x1F00. A copy without it (other firmware, the builds before), or a value out of range: flat */
+#define ST_EQ_OFF (ST_SI_OFF + ST_SI_LEN + 2u)          /* 0x1EF0 */
+#define ST_EQ_LEN (4u + PX_EQ_N + 3u)                   /* 12 */
+#define ST_EQ_MAGIC 0x5145504Fu                         /* "OPEQ" */
+typedef char st_eq_check[(ST_EQ_OFF + ST_EQ_LEN <= 0x1F00u && ST_EQ_LEN <= sizeof st_pl_buf) ? 1 : -1];
+static void st_eq_pack(uint8_t *b)
+{
+    b[0] = 'O'; b[1] = 'P'; b[2] = 'E'; b[3] = 'Q';
+    for (uint32_t k = 0; k < PX_EQ_N; k++) b[4u + k] = (uint8_t)(px_eq[k] - px_eq_min(k));
+    const uint32_t c = ota_crc16(b + 4, PX_EQ_N, 0);
+    b[4u + PX_EQ_N] = (uint8_t)c; b[5u + PX_EQ_N] = (uint8_t)(c >> 8); b[6u + PX_EQ_N] = 0xFFu;
+}
+static void st_eq_load(uint32_t base)                  /* the copy's EQ, or flat */
+{
+    uint8_t *const b = st_pl_buf;
+    memcpy(px_eq, PX_EQ_FLAT, sizeof px_eq);
+    if (!base || ota_fread(base + ST_EQ_OFF, b, ST_EQ_LEN)) return;
+    if ((b[0] | b[1] << 8 | b[2] << 16 | (uint32_t)b[3] << 24) != ST_EQ_MAGIC) return;
+    if ((b[4u + PX_EQ_N] | b[5u + PX_EQ_N] << 8) != (ota_crc16(b + 4, PX_EQ_N, 0) & 0xFFFFu)) return;
+    for (uint32_t k = 0; k < PX_EQ_N; k++)
+        if (!px_eq_set(k, (int)b[4u + k] + px_eq_min(k))) { memcpy(px_eq, PX_EQ_FLAT, sizeof px_eq); return; }
+}
 static void st_sc_load(uint32_t base)                  /* the copy's scenes, or none */
 {
     uint8_t *const b = st_pl_buf;
@@ -335,6 +359,7 @@ static void st_load(void)
     st_sc_load(best);                               /* test build 49: and their scenes */
     st_sn_ok = (uint8_t)(st_sn_valid(best, 0u) | st_sn_valid(best, 1u) << 1);   /* test build 50: their names' records */
     st_si_load(best);                               /* test build 53: their INPUT steps */
+    st_eq_load(best);                               /* ettorebox beta 53: SETTINGS' EQ */
 #endif
     if (best && bh.ver < 3u) st_types_v34();        /* saved before v34: the old amp / drive / cab numbers */
     if (best && bh.ver < 4u) st_time_v35();         /* saved before v35: delay TIME on the 1 s scale */
@@ -410,6 +435,7 @@ static int st_commit(void)
     if (!rc) rc = st_rec_write(base + ST_SN_OFF, st_sn_pack0, ST_SN_LEN);   /* test build 50: the scenes' names */
     if (!rc) rc = st_rec_write(base + ST_SN_OFF + ST_SN_LEN, st_sn_pack1, ST_SN_LEN);
     if (!rc) rc = st_rec_write(base + ST_SI_OFF, st_si_pack, ST_SI_LEN);   /* test build 53: the scenes' INPUT steps */
+    if (!rc) rc = st_rec_write(base + ST_EQ_OFF, st_eq_pack, ST_EQ_LEN);   /* ettorebox beta 53: SETTINGS' EQ */
     st_sn_put = st_sn_drop = 0xFFu;
 #endif
     if (!rc && fl_write(base + 16u, st_slot[0], ST_S0N * ST_SLOT)) rc = -3;   /* sector 0's slots: st_slot's rows are contiguous */

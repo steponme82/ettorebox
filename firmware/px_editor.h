@@ -474,6 +474,8 @@ static void ed_handle(const uint8_t *a, uint32_t n)   /* a: the args, after the 
             if (!rc && n > want && !px_ua_route_valid(a[want])) rc = 1;
 #endif
             if (!rc && n > want + 2u && ed_more_bad(a[want + 1u], a[want + 2u])) rc = 1;   /* (protocol 6) */
+            if (!rc && n >= want + 3u + PX_EQ_N)       /* (ettorebox beta 53, protocol 8: then SETTINGS' EQ, each from 0) */
+                for (k = 0; k < PX_EQ_N; k++) if ((int)a[want + 3u + k] > PX_EQ_MAX[k] - px_eq_min(k)) rc = 1;
             for (k = 0; !rc && k < PXM_MAP_N; k++) {
                 const uint8_t *e = a + 4u + k * 4u;
                 mq[k].src = e[0] ? e[1] : 0xFFu; mq[k].dst = e[2]; mq[k].mode = e[3];
@@ -505,6 +507,8 @@ static void ed_handle(const uint8_t *a, uint32_t n)   /* a: the args, after the 
                     px_vol_at = (uint8_t)((a[want + 2u] >> 4) & 1u);   /* (protocol 7, test build 51: VOL PEDAL, heard at once) */
                     PX_EXP_PLACE(px_vol_at);
                 }
+                if (n >= want + 3u + PX_EQ_N)          /* (protocol 8: the EQ, heard at once, px_audio.h a_eq_sync) */
+                    for (k = 0; k < PX_EQ_N; k++) (void)px_eq_set(k, (int)a[want + 3u + k] + px_eq_min(k));
                 st_midi = px_midi_cfg_pack(&mid_cfg);
                 if (st_commit()) rc = 2;               /* (it stays in RAM and works: the next save writes it) */
                 st_gen++;
@@ -525,6 +529,7 @@ static void ed_handle(const uint8_t *a, uint32_t n)   /* a: the args, after the 
 #endif
         ed_b(px_inz_pack()); ed_b(px_live | (uint32_t)px_sc_rule << 2 | (uint32_t)px_sc_feet << 3 |
                                   (uint32_t)px_vol_at << 4);   /* (protocol 6; 7, test build 51: bit 4 VOL PEDAL) */
+        for (k = 0; k < PX_EQ_N; k++) ed_b((uint32_t)(px_eq[k] - px_eq_min(k)));   /* (ettorebox beta 53, protocol 8: the EQ) */
         break;
     }
     case ED_PL: {                                      /* protocol 6: a preset's own controls (px_midi.h mid_pl): slot (read);

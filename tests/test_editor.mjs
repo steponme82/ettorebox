@@ -490,6 +490,25 @@ if (FX) {
   m = await ed.setPedalMap(m.each, m.entries, m.inputDb, m.tails, m.btPower, m.outMode, m.usb, { ...m.more, view: 1 });
   ok(m.rc === 0 && m.more.volAt === 1 && m.more.view === 1, "MAP: another setting changed, VOL PEDAL kept");
   m = await ed.setPedalMap(m.each, m.entries, m.inputDb, m.tails, m.btPower, m.outMode, m.usb, { ...m.more, view: 2 });
+  // ettorebox beta 53 (protocol 8): SETTINGS' EQ, five bytes after the settings bytes (the editor's two EQ rows)
+  ok(m.eq && m.eq.bass === 0 && m.eq.mid === 0 && m.eq.freq === 7 && m.eq.width === 2 && m.eq.treble === 0,
+     "MAP: the EQ flat, the mid at 800 Hz, MEDIUM (the defaults)");
+  m = await ed.setPedalMap(m.each, m.entries, m.inputDb, m.tails, m.btPower, m.outMode, m.usb, m.more, { bass: 3, mid: -4, freq: 11, width: 3, treble: -12 });
+  ok(m.rc === 0 && m.eq.bass === 3 && m.eq.mid === -4 && m.eq.freq === 11 && m.eq.width === 3 && m.eq.treble === -12 &&
+     m.more.view === 2 && m.more.volAt === 1, "MAP: the EQ set (BASS +3, MID -4 at 2000 Hz NARROW, TREBLE -12), the other settings kept");
+  m = await ed.setPedalMap(m.each, m.entries, m.inputDb, m.tails, m.btPower, m.outMode, m.usb, { ...m.more, view: 1 });
+  ok(m.rc === 0 && m.eq.bass === 3 && m.eq.freq === 11 && m.eq.treble === -12 && m.more.view === 1, "MAP: an editor that sends no EQ leaves it as it is");
+  {
+    const raw = [1, m.each ? 1 : 0, m.inputDb + 10, (m.tails ? 1 : 0) | m.btPower << 1 | m.outMode << 3,
+      ...m.entries.flatMap((e) => (e ? [1, e.src, e.dst, e.mode] : [0, 0, 0, 0])), m.usb.send | (m.usb.cut ? 4 : 0) | m.usb.ret << 3,
+      m.more.tone | m.more.pickup << 4, m.more.view | (m.more.sceneWins ? 4 : 0) | (m.more.feetPresets ? 8 : 0) | m.more.volAt << 4];
+    const r1 = ed._map(await ed.request(30, [...raw, 25, 12, 7, 2, 12], 4000)), r2 = ed._map(await ed.request(30, [...raw, 12, 12, 16, 2, 12], 4000));
+    const r3 = ed._map(await ed.request(30, [...raw, 12, 12, 7, 5, 12], 4000));
+    ok(r1.rc === 1 && r2.rc === 1 && r3.rc === 1 && r3.eq.bass === 3 && r3.eq.treble === -12,
+       "MAP: an EQ value no build writes (+13 dB, a 17th frequency, a 6th width) is refused, the EQ set kept");
+  }
+  m = await ed.setPedalMap(m.each, m.entries, m.inputDb, m.tails, m.btPower, m.outMode, m.usb, { ...m.more, view: 2 }, { bass: 0, mid: 0, freq: 7, width: 2, treble: 0 });
+  ok(m.rc === 0 && m.eq.bass === 0 && m.eq.treble === 0 && m.eq.freq === 7, "MAP: the EQ flat again");
   // PL: a preset's own controls
   const slot = (await ed.state()).slot, other = (slot + 7) % 52;
   let pl = await ed.presetMap(slot);

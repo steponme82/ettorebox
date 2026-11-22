@@ -176,14 +176,19 @@ async function finishCatchHere(c) {
   renderMap();
 }
 async function savePmap(entries, each = pmap.each, inputDb = pmap.inputDb, tails = pmap.tails, btPower = pmap.btPower, outMode = pmap.outMode,
-  usb = pmap.usb, more = pmap.more) {
+  usb = pmap.usb, more = pmap.more, eq = pmap.eq) {
   try {
-    const r = await app.ed.setPedalMap(each, entries, inputDb, tails, btPower, outMode, usb, more);
+    const r = await app.ed.setPedalMap(each, entries, inputDb, tails, btPower, outMode, usb, more, eq);
     if (r.rc === 0) pmap = r; else say(r.rc === 2 ? "The pedal could not save it (flash)." : "The pedal refused it.", "err");
   } catch (e) { say(`Not changed: ${e.message}`, "err"); }
   renderMap();
 }
 const setMore = (k, v) => savePmap(pmap.entries, pmap.each, pmap.inputDb, pmap.tails, pmap.btPower, pmap.outMode, pmap.usb, { ...pmap.more, [k]: v });
+// (protocol 8, ettorebox beta 53) SETTINGS' EQ: the mid's frequencies and widths as the pedal steps them (firmware/px_midi.h)
+const EQ_HZ = [160, 200, 250, 315, 400, 500, 630, 800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000];
+const EQ_WIDTH = ["Very wide", "Wide", "Medium", "Narrow", "Very narrow"];
+const EQ_DB = Array.from({ length: 25 }, (_, i) => [i - 12, i === 12 ? "0 dB (flat)" : `${i > 12 ? "+" : ""}${i - 12} dB`]);
+const setEq = (k, v) => savePmap(pmap.entries, pmap.each, pmap.inputDb, pmap.tails, pmap.btPower, pmap.outMode, pmap.usb, pmap.more, { ...pmap.eq, [k]: v });
 async function loadPmap() {
   pmap = null;
   if (app.conn !== "ready" || !app.ed || !app.ed.hasPedalLearn) return;
@@ -427,6 +432,21 @@ function renderPmap() {
       sel("pmapvolat", "Where the expression pedal's volume acts", "volAt", [[0, "At the input, as the guitar's volume knob (AT INPUT)"], [1, "Before the delay and the reverb, the tone kept (BEFORE DLY)"]]),
       h("span", { class: "grow" }), h("span", { class: "dim small", text: "(SETTINGS, VOL PEDAL: CC 117's volume, and a two-job pedal's while its effect is off; the tails ring on)" })),
   ];
+  // (protocol 8, ettorebox beta 53) SETTINGS' EQ, over the whole guitar at the output, in every preset
+  const eqSel = (id, label, k, opts) => {
+    const e = h("select", { id, "aria-label": label, onchange: () => setEq(k, +e.value) }, opts.map(([v, t]) => h("option", { value: String(v), text: t })));
+    e.value = String(pmap.eq[k]);
+    return e;
+  };
+  const eqRows = pmap.eq && pmap.usb && mo && [
+    h("div", { class: "lrow" }, h("span", { text: "General EQ: bass and treble" }),
+      eqSel("pmapeqb", "General EQ bass, a shelf at 100 Hz", "bass", EQ_DB), eqSel("pmapeqt", "General EQ treble, a shelf at 3.5 kHz", "treble", EQ_DB),
+      h("span", { class: "grow" }), h("span", { class: "dim small", text: "(SETTINGS, EQ BASS and EQ TREBLE: shelves at 100 Hz and 3.5 kHz, over the whole guitar at the output, every preset; heard at once)" })),
+    h("div", { class: "lrow" }, h("span", { text: "General EQ: mid" }),
+      eqSel("pmapeqm", "General EQ mid", "mid", EQ_DB), eqSel("pmapeqf", "General EQ mid frequency", "freq", EQ_HZ.map((f, i) => [i, `at ${f} Hz`])),
+      eqSel("pmapeqw", "General EQ mid width", "width", EQ_WIDTH.map((t, i) => [i, t])),
+      h("span", { class: "grow" }), h("span", { class: "dim small", text: "(SETTINGS, EQ MID, EQ MID FREQ and EQ MID WIDTH: a peak or a dip where the room or the speaker needs it)" })),
+  ];
   const used = pmap.entries.map((e, i) => [e, i]).filter(([e]) => e);
   return h("div", { class: "learned", id: "pmap" },
     h("div", { class: "lrow" }, h("span", { text: "The flip numbers, CC 8 to 19, act" }), sw, h("span", { class: "grow" }),
@@ -446,6 +466,7 @@ function renderPmap() {
     u && h("div", { class: "lrow" }, h("span", { text: "USB audio: the guitar there" }), ug, h("span", { class: "grow" }),
       h("span", { class: "dim small", text: "(SETTINGS, GUITAR: cut, only the computer's sound goes on from there; the guitar comes back when the computer stops playing)" })),
     moreRows,
+    eqRows,
     used.length ? used.map(([e, i]) => {
       const t = pedalTarget(e.dst), isValue = e.mode === MAP_VALUE || (t && (t.kind === "param" || t.kind === "type" || t.kind === "exp" || t.kind === "master"));
       const mode = !isValue && h("select", { "aria-label": `How CC ${e.src} acts`, onchange: () => {

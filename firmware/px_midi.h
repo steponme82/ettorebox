@@ -120,6 +120,58 @@ static int px_inz_coefs(float sr, uint32_t inz, uint32_t pickup, float *c)   /* 
     c[3] = 2.0f * (d0 - d2 * Kd2) * ga; c[4] = (d2 * Kd2 - d1 * Kd + d0) * ga;
     return 1;
 }
+/* ettorebox beta 53: SETTINGS' EQ, one for every preset, to suit the room, the speaker, the headphones: BASS (a shelf at 100 Hz),
+ * MID (a peak at MID FREQ, MID WIDTH wide), TREBLE (a shelf at 3.5 kHz), -12..+12 dB each. px_audio.h runs it over the whole
+ * guitar at the output, after the chain and before the volume; the phone's music goes around it, and so does GTR+BASS's bass.
+ * All three at 0 dB: off, the sound bit for bit as without it. px_eq: BASS, MID (dB), MID FREQ (PX_EQ_HZ's), MID WIDTH
+ * (PX_EQ_QV's), TREBLE (dB); the store keeps them (px_store.h "OPEQ"), the editor sets them (px_editor.h MAP) */
+enum { PX_EQ_BASS, PX_EQ_MID, PX_EQ_FREQ, PX_EQ_WIDTH, PX_EQ_TREB, PX_EQ_N };
+static const int8_t PX_EQ_FLAT[PX_EQ_N] = {0, 0, 7, 2, 0};   /* (flat; the mid at 800 Hz, MEDIUM) */
+static int8_t px_eq[PX_EQ_N] = {0, 0, 7, 2, 0};
+static const int8_t PX_EQ_MAX[PX_EQ_N] = {12, 12, 15, 4, 12};
+static const uint16_t PX_EQ_HZ[16] = {160, 200, 250, 315, 400, 500, 630, 800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000};
+static const float PX_EQ_QV[5] = {0.5f, 0.8f, 1.2f, 2.0f, 3.5f};
+static const char *const PX_EQ_WNAME[5] = {"VERY WIDE", "WIDE", "MEDIUM", "NARROW", "VERY NARROW"};
+static int px_eq_min(uint32_t k) { return k == PX_EQ_FREQ || k == PX_EQ_WIDTH ? 0 : -12; }
+static void px_eq_step(uint32_t k, int dd)            /* (SETTINGS' knob: a step, no further than either end) */
+{
+    int v = px_eq[k] + (dd > 0 ? 1 : -1);
+    if (v < px_eq_min(k)) v = px_eq_min(k);
+    if (v > PX_EQ_MAX[k]) v = PX_EQ_MAX[k];
+    px_eq[k] = (int8_t)v;
+}
+static int px_eq_set(uint32_t k, int v)               /* (the store's and the editor's: 0, and nothing set, out of range) */
+{
+    if (k >= PX_EQ_N || v < px_eq_min(k) || v > PX_EQ_MAX[k]) return 0;
+    px_eq[k] = (int8_t)v;
+    return 1;
+}
+static uint32_t px_eq_pack(void)                      /* (the five as one word: a change seen) */
+{
+    return (uint32_t)(px_eq[0] + 12) | (uint32_t)(px_eq[1] + 12) << 5 | (uint32_t)px_eq[2] << 10 | (uint32_t)px_eq[3] << 14 |
+           (uint32_t)(px_eq[4] + 12) << 17;
+}
+/* one biquad, the cookbook's (RBJ, as engine/px_dsp.c's): kind 0 a low shelf, 1 a peak, 2 a high shelf; c = b0 b1 b2 a1 a2 */
+static __attribute__((noinline)) void px_eq_bq(float *c, float sr, uint32_t kind, float f, float q, float db)
+{
+    const float A = powf(10.0f, db * 0.025f), w = 6.2831853f * f / sr, cw = cosf(w), al = sinf(w) / (2.0f * q);
+    float b0, b1, b2, a0, a1, a2;
+    if (kind == 1u) { b0 = 1.0f + al * A; b2 = 1.0f - al * A; a0 = 1.0f + al / A; a2 = 1.0f - al / A; b1 = a1 = -2.0f * cw; }
+    else {                                             /* (the two shelves: one form, the high one's A - 1 turned round) */
+        const float ap = A + 1.0f, am = kind ? 1.0f - A : A - 1.0f, t = 2.0f * sqrtf(A) * al;
+        b0 = A * (ap - am * cw + t); b1 = 2.0f * A * (am - ap * cw); b2 = A * (ap - am * cw - t);
+        a0 = ap + am * cw + t; a1 = -2.0f * (am + ap * cw); a2 = ap + am * cw - t;
+    }
+    c[0] = b0 / a0; c[1] = b1 / a0; c[2] = b2 / a0; c[3] = a1 / a0; c[4] = a2 / a0;
+}
+/* the three filters at sample rate sr into c (b0 b1 b2 a1 a2 each: BASS, MID, TREBLE); the bands not at 0 dB, a bit each (0: off) */
+static uint32_t px_eq_coefs(float sr, float *c)
+{
+    px_eq_bq(c, sr, 0u, 100.0f, 0.70710678f, (float)px_eq[PX_EQ_BASS]);
+    px_eq_bq(c + 5, sr, 1u, (float)PX_EQ_HZ[px_eq[PX_EQ_FREQ] & 15], PX_EQ_QV[px_eq[PX_EQ_WIDTH] % 5], (float)px_eq[PX_EQ_MID]);
+    px_eq_bq(c + 10, sr, 2u, 3500.0f, 0.70710678f, (float)px_eq[PX_EQ_TREB]);
+    return (px_eq[PX_EQ_BASS] ? 1u : 0u) | (px_eq[PX_EQ_MID] ? 2u : 0u) | (px_eq[PX_EQ_TREB] ? 4u : 0u);
+}
 static uint8_t px_set_pack(void)
 {
     return (uint8_t)(((unsigned)px_in_db & 0x1Fu) | (unsigned)(px_bt_pwr & 3u) << 5 | (px_tails ? 0x80u : 0u));
