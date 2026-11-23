@@ -24,10 +24,12 @@ Not affiliated with M-VAVE, Donner or the OpenPocket maintainers. Install at you
 
 ## Status
 
-Beta. The latest is beta 53, test build 53 (see Releases): the GT page is the preset's input (its own GUITAR TONE, PICKUP
-and INPUT level), and a scene can have its own tone. Since beta 52 the pedal is `ettorebox` on its screen, to a phone and
-to a computer. Build 50 runs on its author's BlackBox, and build 38 is the one played
-longest, about two hours of music on stage. [docs/BT-AUDIO-TEST.md](docs/BT-AUDIO-TEST.md) has every test build's notes
+Beta. The latest is beta 54 (see Releases): the two footswitches have three modes, PRESETS, STOMP and SCENES, turned by
+pressing both, and LOW OCTAVE's high notes hold steady. It includes beta 53, which was not released on its own: the GT
+page is the preset's input (its own GUITAR TONE, PICKUP and INPUT level, with an input check that sets the level), a
+scene can have its own tone, and SETTINGS has a general EQ. Since beta 52 the pedal is `ettorebox` on its screen, to a
+phone and to a computer. Beta 54 runs on its author's BlackBox, and build 38 is the one played longest, about two hours
+of music on stage. [docs/BT-AUDIO-TEST.md](docs/BT-AUDIO-TEST.md) has every test build's notes
 and what to check on each.
 
 ## Before you install

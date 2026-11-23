@@ -367,7 +367,13 @@ seconds the pedal finds it, links and listens to it, with no phone in between. N
 
 ### 6.2 The Chocolate by USB cable
 
-SETTINGS' **USB PORT** on **FOOTSW** makes the pedal's USB-C port the USB MIDI host of a footswitch by cable. The pedal gives
+**A Chocolate Plus with its switch on H** is a USB host itself (the way it runs a Valeton GP-5): a USB-A to USB-C cable
+from its HOST port to the pedal's USB-C, and the pedal stays on USB PORT **COMPUTER**, as at every power-on. The pedal reads
+its switches as a computer's MIDI, so everything learned works as over Bluetooth. PLAY's battery reads `USB` while the
+Chocolate gives the cable its 5 V. Checked on a pedal with the Chocolate's own USB-C powered; on its battery alone, not
+yet. If a press acts twice (the Chocolate linked by Bluetooth as well), tell us.
+
+**A footswitch that is only a USB device** (a Chocolate on U): SETTINGS' **USB PORT** on **FOOTSW** makes the pedal's USB-C port the USB MIDI host of a footswitch by cable. The pedal gives
 no 5 V on its port, so an OTG adapter with a charging input goes between them, with a charger or a power bank in it (it
 charges the pedal too). The setting is never saved: every power-on is the normal USB device again. While the cable's
 footswitch is connected, Bluetooth MIDI is not read (no double presses). This one is new: checked on a computer, not yet
