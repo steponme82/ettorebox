@@ -225,7 +225,12 @@ static void ed_ui_fix(void)                       /* the block page after a type
     if (ui_item >= 2u + (uint32_t)px_nparams((int)ui_blk, PRESET.type[ui_blk])) ui_item = 0;
 }
 
-static void ed_handle(const uint8_t *a, uint32_t n)   /* a: the args, after the command byte */
+#ifndef UI_SMALL
+#define UI_SMALL
+#endif
+/* ettorebox beta 54: compiled for size in the Bluetooth audio image (ui.h UI_SMALL, as the pages' drawing): a command now and
+ * then from the editor, never on the sound's path; the release as it was */
+static UI_SMALL void ed_handle(const uint8_t *a, uint32_t n)   /* a: the args, after the command byte */
 {
     uint32_t cmd = a[-1], i, k;
     int rc;

@@ -42,6 +42,9 @@ function tgtName(t) {
   return `${B.label} · ${p ? p.name : `setting ${t.k + 1}`}`;
 }
 const srcName = (s) => `CC ${s.cc} · ch ${s.ch}`;
+// ettorebox beta 54: the pedal's own footswitches, learned on it for STOMP (px_midi.h PXM_CC_FSL / FSR, never a controller's)
+const FOOT = { 126: "Left footswitch", 127: "Right footswitch" };
+const plSrc = (s) => FOOT[s] || `CC ${s}`;
 function pedalName(e) {                 // what a learned entry does, from the pedal's own number it is read as
   const t = pedalTarget(e.dst);
   if (!t) return `CC ${e.dst}`;
@@ -503,15 +506,16 @@ function renderPlist() {
         (e.clo !== e.chi && (e.clo !== 0 || e.chi !== 127)) && h("span", { class: "dim small", title: "Where the pedal was at the heel and at the toe while it was learned", text: `(CC ${e.clo} to ${e.chi})` }),
         vol && h("label", { class: "tick", title: "As a multi-effect's expression pedal with a toe switch: whatever turns the block on and off changes the pedal's job. Where the volume acts: Volume pedal, above." },
           vol, ` or VOLUME when ${blk(t.b).label} is off`)];
-    } else if (kind !== MAP_VALUE) {
+    } else if (kind !== MAP_VALUE && !FOOT[e.src]) {   // (beta 54: a footswitch of the pedal's own has nothing to choose)
       const m = h("select", { "aria-label": `How CC ${e.src} acts`, onchange: () => put({ mode: +m.value }) },
         h("option", { value: String(MAP_PRESS), text: "Press: 127, then 0 when let go" }), h("option", { value: String(MAP_EACH), text: "Each message is a press" }));
       m.value = String(kind === MAP_EACH ? MAP_EACH : MAP_PRESS);
       how = m;
     }
-    return h("div", { class: "lrow" }, h("span", { class: "chip", text: `CC ${e.src}` }), h("span", { class: "arrow", "aria-hidden": "true", text: "→" }),
+    const foot = FOOT[e.src] ? "The pedal's own footswitch, in STOMP (both footswitches change the mode). Forgetting it forgets all it switches in this preset." : null;
+    return h("div", { class: "lrow" }, h("span", { class: "chip", text: plSrc(e.src), title: foot }), h("span", { class: "arrow", "aria-hidden": "true", text: "→" }),
       h("b", { text: `${pedalName(e)}${two ? " +VOL" : ""}` }), h("span", { class: "grow" }), how,
-      h("button", { type: "button", class: "btn icon small", "aria-label": `Forget CC ${e.src} in this preset`,
+      h("button", { type: "button", class: "btn icon small", "aria-label": `Forget ${plSrc(e.src)} in this preset`,
         onclick: () => savePlist((slot) => app.ed.presetForget(slot, e.src)) }, icon("x")));
   });
   return h("div", { class: "learned", id: "plist" },

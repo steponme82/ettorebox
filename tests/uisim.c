@@ -261,10 +261,11 @@ static int overhaul(const char *d)
     tap(UB_HOME); CHECK(ui_mode == M_CHAIN, "HOME leaves SAVE");
     hold(1u << UB_FX, 850); hold(0, 5); CHECK(ui_mode == M_MIDI, "hold FX: MIDI");
     tap(UB_HOME); CHECK(ui_mode == M_CHAIN, "HOME leaves MIDI");
-    /* F5: both footswitches: the first acts at once, the other within 150 ms takes that step back and opens the tuner */
+    /* F5: both footswitches: the first acts at once, the other within 150 ms takes that step back and opens the tuner (ettorebox
+     * beta 54: held 0.7 s; let go sooner, the footswitches' next mode, feet_modes) */
     hold(1u << UB_FSUP, 60); CHECK(cur_preset == 10, "F5: the first footswitch acts at its press");
     poison();
-    hold(1u << UB_FSUP | 1u << UB_FSDN, 60);
+    hold(1u << UB_FSUP | 1u << UB_FSDN, 750);
     CHECK(ui_mode == M_TUNER && cur_preset == 9 && a_tmute, "F5: both footswitches: the step back, the tuner, muted");
     tuner_draw(108.0f); shot(d, "tuner_flat");
     CHECK(count_col(10, 76, 46, 23, UI_ACC) && !count_col(184, 76, 46, 23, UI_ACC), "F12: flat: an arrow on the left, toward in tune");
@@ -397,10 +398,10 @@ static int pad_gestures(const char *d)
     const uint32_t FSL = UB_FSDN, FSR = UB_FSUP;
     px_preset_t was;
     pad_start(0); tap(FSL); CHECK(cur_preset == 8 && n_catch == 0, "PAD off: the left footswitch steps back, as on v42");
-    pad_start(0); hold(1u << FSL, 40); hold(1u << FSL | 1u << FSR, 40); hold(0, 300);
+    pad_start(0); hold(1u << FSL, 40); hold(1u << FSL | 1u << FSR, 750); hold(0, 300);
     CHECK(ui_mode == M_TUNER && cur_preset == 9 && a_tmute, "PAD off: left then right within 150 ms: the tuner, the preset as it was");
     tuner_close();
-    pad_start(0); hold(1u << FSR, 40); hold(1u << FSR | 1u << FSL, 40); hold(0, 300);
+    pad_start(0); hold(1u << FSR, 40); hold(1u << FSR | 1u << FSL, 750); hold(0, 300);
     CHECK(ui_mode == M_TUNER && cur_preset == 9, "PAD off: right then left: the tuner, the preset as it was");
     tuner_close();
     pad_start(1); was = PRESET; tap(FSL);
@@ -409,12 +410,12 @@ static int pad_gestures(const char *d)
     pad_start(1); ui_mode = M_BLOCK; ui_blk = PX_B_SYN; ui_item = 2; tap(FSL);
     CHECK(n_catch == 1 && ui_mode == M_BLOCK && ui_blk == PX_B_SYN && ui_item == 2, "PAD on, on the SYN page: a catch leaves the page as it is");
     pad_start(1); tap(FSR); CHECK(cur_preset == 10 && n_catch == 0, "PAD on: the right footswitch still steps on");
-    pad_start(1); hold(1u << FSL, 40); hold(1u << FSL | 1u << FSR, 40); hold(0, 300);
+    pad_start(1); hold(1u << FSL, 40); hold(1u << FSL | 1u << FSR, 750); hold(0, 300);
     CHECK(ui_mode == M_TUNER && a_tmute && cur_preset == 9 && n_catch == 1 && n_fade == 1,
           "PAD on: left then right within 150 ms: the tuner, the pad let go, the preset as it was");
     hold(1u << FSL, 40); hold(0, 300);
     CHECK(ui_mode == M_CHAIN && n_catch == 1 && !a_tmute, "PAD on: in the tuner the left footswitch only leaves it (no catch)");
-    pad_start(1); hold(1u << FSR, 40); hold(1u << FSR | 1u << FSL, 40); hold(0, 300);
+    pad_start(1); hold(1u << FSR, 40); hold(1u << FSR | 1u << FSL, 750); hold(0, 300);
     CHECK(ui_mode == M_TUNER && cur_preset == 9 && n_catch == 0 && n_fade == 0, "PAD on: right then left: the step back and the tuner, no catch");
     tap(FSR); hold(0, 300);
     pad_start(1); hold(1u << FSL, 750); hold(0, 50);
@@ -682,8 +683,8 @@ static int scenes(const char *d)
     }
     {   /* both footswitches: the tuner, the first one's scene step taken back */
         const uint32_t c0 = px_sc.cur;
-        hold(1u << UB_FSUP, 40); hold(1u << UB_FSUP | 1u << UB_FSDN, 40); hold(0, 10);
-        CHECK(ui_mode == M_TUNER && px_sc.cur == c0, "scenes: both footswitches: the tuner, the scene as it was");
+        hold(1u << UB_FSUP, 40); hold(1u << UB_FSUP | 1u << UB_FSDN, 750); hold(0, 10);
+        CHECK(ui_mode == M_TUNER && px_sc.cur == c0, "scenes: both footswitches held: the tuner, the scene as it was");
         tap(UB_HOME); hold(0, 10);
     }
     px_sc_feet = 1; ui_home(); hold(0, 10);
@@ -988,6 +989,118 @@ static int usb_notes(const char *d)
     ui_status("DSP 42%", UI_ST_NORM); ui_render();
     CHECK(count_col(0, F_Y + 3u, 240, 15, RED) > 0, "  and the note comes back after it");
     usb_note = 0; full();
+    return 0;
+}
+/* ettorebox beta 54: the footswitches' modes. Both, let go within 0.7 s: the next mode, PLAY's next view (CHAIN the presets,
+ * SWITCHES the STOMP, SCENES), passing by those this preset has none of; held 0.7 s: the tuner. In STOMP each footswitch
+ * switches what it is learned on in this preset (its blocks together, a scene and back); one with none steps the presets */
+static void feet_both(uint32_t first, uint32_t ms)     /* (the first footswitch, the other 40 ms later, both let go after ms) */
+{
+    hold(1u << first, 40); hold(3u, ms); hold(0, 10);
+}
+static int feet_modes(const char *d)
+{
+    static const char *const T[] = {"FOOTSW: PRESETS ONLY", "FOOTSW: SCENES", "LEARNED: FOOT R", "FOOT R CLEARED", "FOOT R  HOLD FX: CLEAR"};
+    uint8_t b[LV_MAX], c[LV_MAX];
+    int e;
+    for (uint32_t i = 0; i < sizeof T / sizeof T[0]; i++) CHECK(ft_width(&FT_SM, T[i]) <= ST_X - 2u, "feet: the notes fit a block page's hint box");
+    px_midi_map_clear(); px_midi_pl_clear(); px_learn_cancel(); learn_saved = 0;
+    px_live = 0; px_sc_rule = 0; px_sc_feet = 0;
+    memset(&px_sc_tab[12], 0, sizeof px_sc_tab[12]);
+    ui_home(); load_preset(12); cur_preset = 12; hold(0, 3000); full();
+    CHECK(!ui_pad_on(), "feet: preset 12 has no PAD on (the left footswitch is a preset's step)");
+    /* nothing learned, no scene: both stay on the presets, and say so */
+    feet_both(UB_FSUP, 60); ui_render(); shot(d, "feet_presets_only");
+    CHECK(px_live == 0u && cur_preset == 12u && ui_mode == M_CHAIN && ul.note == UL_FEET && ul.cc == 3u && footer_has(GRN),
+          "feet: both, let go: the step taken back; nothing else here: FOOTSW: PRESETS ONLY");
+    hold(0, 2600);
+    /* the left footswitch learned on DRIVE's ON, then on DELAY's: pressed on the guided page as a controller's switch */
+    for (int k = 0; k < 2; k++) {
+        const uint32_t blk = k ? PX_B_DELAY : PX_B_DRIVE;
+        ui_blk = blk; ui_mode = M_BLOCK; ui_item = 1; full();
+        hold(1u << UB_FX, 850); hold(0, 10); tap(UB_PUSH);
+        CHECK(ui_mode == M_GUIDE && lg.step == LG_LISTEN && mid_learn.on, "feet: hold FX on ON, PUSH: PRESS THE SWITCH");
+        tap(UB_FSDN); hold(0, 1300); ui_render();
+        if (!k) shot(d, "feet_learned_left");
+        e = px_midi_pl_row(12, PXM_CC_TOGGLE0 + blk, PXM_CC_ON0 + blk);
+        CHECK(ui_mode == M_BLOCK && cur_preset == 12u && e >= 0 && mid_pl[e].src == PXM_CC_FSL && learn_saved == k + 1 && footer_has(GRN),
+              "feet: the left footswitch learned on the row (no preset's step), written, LEARNED: FOOT L");
+        hold(0, 2600);
+    }
+    CHECK(px_midi_pl_count(12) == 2u, "feet: one footswitch, two rows: a footswitch keeps its others");
+    /* both: STOMP now (a footswitch learned here); its tiles, the left footswitch's first */
+    ui_home(); hold(0, 10);
+    feet_both(UB_FSDN, 60); full(); shot(d, "feet_stomp");
+    CHECK(px_live == 1u && cur_preset == 12u && ul.note == UL_FEET && ul.cc == 1u && ui_live() && live_list(b, c) == 2u &&
+          c[0] == PXM_CC_FSL && b[0] == PX_B_DRIVE && c[1] == PXM_CC_FSL && b[1] == PX_B_DELAY,
+          "feet: both: STOMP, FOOTSW: STOMP; its tiles the left footswitch's DRIVE and DELAY");
+    /* STOMP: the left switches its two together, on if the first is off; the right, with none, steps on */
+    PRESET.on[PX_B_DRIVE] = 0; PRESET.on[PX_B_DELAY] = 1;
+    tap(UB_FSDN); hold(0, 10);
+    CHECK(PRESET.on[PX_B_DRIVE] && PRESET.on[PX_B_DELAY] && cur_preset == 12u, "feet: STOMP: the left, DRIVE off: both on, the preset kept");
+    tap(UB_FSDN); hold(0, 10); ui_render(); shot(d, "feet_stomp_off");
+    CHECK(!PRESET.on[PX_B_DRIVE] && !PRESET.on[PX_B_DELAY] && cur_preset == 12u, "feet: STOMP: the left again: both off");
+    tap(UB_FSUP); hold(0, 300);
+    CHECK(cur_preset == 13u && px_live == 1u, "feet: STOMP: the right, none learned: the next preset");
+    tap(UB_FSDN); hold(0, 300);
+    CHECK(cur_preset == 12u, "feet: in preset 13 the left has none either: back to 12");
+    /* both, the left first: its switch taken back exactly (the two unlike), and the next mode, no scene here: PRESETS */
+    PRESET.on[PX_B_DRIVE] = 1; PRESET.on[PX_B_DELAY] = 0;
+    feet_both(UB_FSDN, 60);
+    CHECK(PRESET.on[PX_B_DRIVE] == 1 && PRESET.on[PX_B_DELAY] == 0 && px_live == 0u && ul.cc == 0u && cur_preset == 12u,
+          "feet: both in STOMP: the left's switch taken back as it was; no scene: PRESETS");
+    /* held 0.7 s: the tuner, the mode kept */
+    feet_both(UB_FSUP, 750);
+    CHECK(ui_mode == M_TUNER && cur_preset == 12u && px_live == 0u, "feet: both held 0.7 s: the tuner, the mode kept");
+    tap(UB_HOME); hold(0, 10);
+    CHECK(ui_mode == M_CHAIN, "feet: HOME leaves the tuner");
+    /* scenes stored: the round is PRESETS, STOMP, SCENES, PRESETS */
+    px_sc.set = 3u; px_sc.cur = 0; px_sc.mask[0] = (uint16_t)sc_now(); px_sc.mask[1] = (uint16_t)(sc_now() ^ 1u << PX_B_MOD);
+    px_sc_tab[12] = px_sc;
+    for (uint32_t k = 0; k < 3u; k++) {
+        feet_both(UB_FSUP, 60);
+        CHECK(px_live == (k + 1u) % 3u && ul.cc == (k + 1u) % 3u && cur_preset == 12u && px_sc.cur == 0u,
+              "feet: with scenes: PRESETS, STOMP, SCENES, PRESETS; each first step taken back");
+    }
+    /* the right footswitch learned on SCENE 2 (SCENES' view, hold FX on its tile); in STOMP: to SCENE 2, and back */
+    px_live = 2u; ui_home(); hold(0, 10); sc_sel = 0; ui_turn(1, 0);
+    hold(1u << UB_FX, 850); hold(0, 10);
+    CHECK(ui_mode == M_GUIDE && lg.scene == 2u && lg.step == LG_LISTEN, "feet: hold FX on SCENE 2: PRESS THE SWITCH");
+    tap(UB_FSUP); hold(0, 1300); ui_render();
+    e = px_midi_pl_row(12, PXM_CC_SCENE0 + 1u, 0xFFu);
+    CHECK(ui_mode == M_CHAIN && e >= 0 && mid_pl[e].src == PXM_CC_FSR && px_sc.cur == 0u && footer_has(GRN),
+          "feet: the right footswitch learned on SCENE 2, no scene's step");
+    hold(0, 2600); full(); shot(d, "feet_scenes_right");
+    px_live = 1u; ui_home(); hold(0, 10);
+    px_sc.mask[1] = (uint16_t)(sc_now() ^ 1u << PX_B_MOD);
+    const uint8_t mod = PRESET.on[PX_B_MOD], drv = PRESET.on[PX_B_DRIVE];
+    full(); shot(d, "feet_stomp_scene");
+    CHECK(live_list(b, c) == 3u && c[2] == PXM_CC_FSR && b[2] == PX_NBLK + 1u, "feet: STOMP's tiles: the left's two blocks, the right's scene");
+    tap(UB_FSUP); hold(0, 10);
+    CHECK(px_sc.cur == 1u && PRESET.on[PX_B_MOD] == !mod && cur_preset == 12u, "feet: STOMP: the right: SCENE 2, its MOD");
+    tap(UB_FSUP); hold(0, 10);
+    CHECK(px_sc.cur == 0u && PRESET.on[PX_B_MOD] == mod, "feet: STOMP: the right again: back to SCENE 1");
+    PRESET.on[PX_B_DRIVE] = (uint8_t)!drv; tap(UB_FSUP); hold(0, 10);
+    CHECK(px_sc.cur == 1u && PRESET.on[PX_B_DRIVE] == !drv, "feet: SWITCH WINS: a scene leaves the footswitch's DRIVE as it is");
+    feet_both(UB_FSUP, 60);
+    CHECK(px_sc.cur == 1u && px_live == 2u && ul.cc == 2u, "feet: both, the right first: its scene taken back, then SCENES");
+    hold(0, 2600);
+    /* a row's tag and the MIDI table name the footswitch; clearing a row leaves the footswitch's other */
+    ui_blk = PX_B_DRIVE; ui_mode = M_BLOCK; ui_item = 1; full(); shot(d, "feet_row_tag");
+    CHECK(footer_has(UI_ACC), "feet: DRIVE's ON says FOOT L  HOLD FX: CLEAR");
+    hold(1u << UB_FX, 850); hold(0, 10);
+    CHECK(px_midi_pl_row(12, PXM_CC_TOGGLE0 + PX_B_DRIVE, PXM_CC_ON0 + PX_B_DRIVE) < 0 &&
+          px_midi_pl_row(12, PXM_CC_TOGGLE0 + PX_B_DELAY, PXM_CC_ON0 + PX_B_DELAY) >= 0, "feet: hold FX on DRIVE's ON: cleared, DELAY's kept");
+    hold(0, 2600);
+    ui_item = 0; full(); hold(1u << UB_FX, 850); hold(0, 10); ui_render(); shot(d, "feet_midi_table");
+    CHECK(ui_mode == M_LEARN, "feet: hold FX on MODEL: the preset's MIDI table (FOOT L, FOOT R)");
+    tap(UB_HOME); hold(0, 10);
+    /* on a setting's learn the footswitches do nothing */
+    ui_blk = PX_B_DELAY; ui_mode = M_BLOCK; ui_item = 2; full();
+    hold(1u << UB_FX, 850); hold(0, 10); tap(UB_PUSH); tap(UB_FSDN); hold(0, 10);
+    CHECK(ui_mode == M_GUIDE && !mid_learn.got && cur_preset == 12u, "feet: a setting's learn: the footswitches do nothing");
+    tap(UB_HOME); hold(0, 2600);
+    px_midi_pl_clear(); px_live = 0; memset(&px_sc_tab[12], 0, sizeof px_sc_tab[12]); ui_home(); load_preset(12); full();
     return 0;
 }
 #endif
@@ -1309,7 +1422,7 @@ int main(int argc, char **argv)
     midi_knob(-1); if (mid_cfg.chan != 16) { printf("midi: omni - 1 must wrap to 16\n"); return 1; }
 #if PX_OWN_FX
     return quick_wins(d) || overhaul(d) || pad_gestures(d) || usb_notes(d) || learn_live(d) || live_view(d) || scenes(d) || two_jobs(d) ||
-           gt_input(d);
+           gt_input(d) || feet_modes(d);
 #else
     return quick_wins(d) || overhaul(d);
 #endif

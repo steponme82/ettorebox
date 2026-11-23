@@ -90,8 +90,8 @@ act as soon as you press them.
 | **FX** | The next block of FX's group (DRV, SFX, SYN, PIT, CMP, GT, EQ), in the preset's order | **0.8 s**: on PLAY, **SETTINGS**. On a block's row: **learn a controller** on it, or clear the one it has. On MODEL: the preset's MIDI table. On GT's INPUT (or SETTINGS' INPUT): the **input check**. In SCENES' view: learn (or clear) the selected scene's switch |
 | **AMP, MOD, DLY, REV** | Open the block's page; press again: switch it on or off | |
 | **CAB** | Open the CAB page; press again: on or off | **0.8 s: PLAY's next view** (CHAIN, SWITCHES, SCENES) |
-| **Right / left footswitch** | Next / previous preset (from a block's page it also goes back to PLAY). In SCENES' view: the next / previous scene. On SETTINGS: the next / previous row | |
-| **Both footswitches** | The tuner (the second within 0.15 s of the first; the first one's step is taken back) | |
+| **Right / left footswitch** | Next / previous preset (from a block's page it also goes back to PLAY). In SCENES' view: the next / previous scene. In STOMP (SWITCHES' view): what it is learned on in this preset, else the next / previous preset. On SETTINGS: the next / previous row | |
+| **Both footswitches** | Let go at once: **the footswitches' next mode**, PRESETS, STOMP, SCENES ([5](#the-footswitches-three-modes)). The second within 0.15 s of the first; the first one's step is taken back | **0.7 s: the tuner** |
 | **Left footswitch, a SYN PAD on** | Catch the chord you are playing (it no longer goes to the previous preset) | **0.7 s: the pad fades out** |
 | **MASTER** | The output volume (`VOL` on PLAY) | |
 
@@ -137,11 +137,13 @@ The main screen.
 **Overload guard:** if the DSP ever runs over the safety limit, the effects are bypassed until the next change. A red bar
 says `OVERLOAD: SOUND BYPASSED`, and the footer says `TURN A BLOCK OFF`.
 
-**Hold CAB** to turn PLAY's view round:
+**Hold CAB** to turn PLAY's view round. Both footswitches turn it too, and with it what the footswitches do
+([The footswitches' three modes](#the-footswitches-three-modes)):
 
 - **CHAIN:** as above.
 - **SWITCHES:** what each controller switch does in this preset, in big tiles: a block (lit when on) or a scene (lit while
-  it plays), in the switches' order. Turning the knob shows the chain for 5 seconds.
+  it plays), the pedal's own footswitches first (`FOOT L`, `FOOT R`), then the switches' order. Turning the knob shows the
+  chain for 5 seconds.
 - **SCENES:** the preset's four scenes, the one playing lit, the knob's in a ring, each with its switch's number. The knob
   picks one, PUSH recalls it, hold FX learns its switch. Here holding FX does not open SETTINGS: hold CAB back to CHAIN
   first.
@@ -175,7 +177,7 @@ it, PUSH does nothing). The sound mutes for about 0.1 s while it saves. The peda
 
 ### Tuner and diagnostics
 
-Hold HOME (or press both footswitches): the tuner. The note, how far off in cents, and an arrow towards in tune. Your
+Hold HOME (or hold both footswitches 0.7 s): the tuner. The note, how far off in cents, and an arrow towards in tune. Your
 guitar is muted; the phone's music keeps playing. Any button or footswitch leaves.
 
 Keep holding HOME (or hold it again on the tuner): **diagnostics**, the two pages a bug report asks for a photo of. The
@@ -318,6 +320,31 @@ Like Helix's snapshots: four scenes a preset, each a set of blocks on and off. R
 
 A good start with a Chocolate's four switches: two scenes and two blocks.
 
+### The footswitches' three modes
+
+Press both footswitches and let go: they go to their next mode, and PLAY's view with them. The footer says which
+(`FOOTSW: STOMP`). Hold both 0.7 s instead for the tuner.
+
+| Mode | PLAY's view | The footswitches |
+| --- | --- | --- |
+| **PRESETS** | CHAIN | the next / previous preset |
+| **STOMP** | SWITCHES | each one switches what it is learned on in this preset; one with nothing learned steps the presets |
+| **SCENES** | SCENES | the next / previous scene |
+
+- **Only what the preset has:** STOMP comes round only in a preset with a footswitch learned, SCENES only in one with a scene
+  stored. In a preset with neither, both footswitches say `FOOTSW: PRESETS ONLY`.
+- **A footswitch for STOMP:** learn it as a controller's switch ([6.3](#63-learning-a-control-on-the-pedal)). On a block's
+  page select ON, hold FX, PUSH, and press the footswitch (`LEARNED: FOOT L`). Learn the same footswitch on more blocks and
+  they go together: all on if the first is off, else all off. For example a 12-STRING and a chorus on the left, a boost on
+  the right.
+- **A scene on a footswitch:** in SCENES' view hold FX on the scene's tile and press the footswitch. In STOMP a press goes to
+  that scene, the next one back to the scene before.
+- **Scenes leave a footswitch's blocks to it**, as any switch's (SETTINGS' SCENE+SWITCH, [Scenes](#scenes)).
+- **Each preset has its own**, kept with its learned controls (64 for all the presets together): `FOOT L` and `FOOT R` in
+  its MIDI table (hold FX on MODEL) and in the web editor. Holding FX on a block's ON row clears that row only.
+- **The mode** is kept with the settings at the next save, as PLAY's view is.
+- Pressing both, the first footswitch acts for an instant before it is taken back: a block switched that long may be heard.
+
 ## 6. Controllers: the Chocolate and MIDI
 
 ### 6.1 The M-VAVE Chocolate over Bluetooth
@@ -364,7 +391,10 @@ it is written at once (an unsaved sound stays unsaved).
 
 - On **ON**, a switch flips the block (a momentary switch on its press; one that sends a message a press, on each one), a
   pedal switches it (on at 64 and up).
-- A row has one control and a control one row in a preset: learning another replaces it.
+- A row has one control and a control one row in a preset: learning another replaces it. The pedal's own footswitches are
+  the exception: one can have several rows ([The footswitches' three modes](#the-footswitches-three-modes)).
+- **The pedal's footswitches** are switches too, on ON and on a scene: pressed at PRESS THE SWITCH they are learned for STOMP
+  (`FOOT L`, `FOOT R`). Not on a setting: there they do nothing.
 - A selected row that has one says so (`CC 30  HOLD FX: CLEAR`): **hold FX on it to clear it.**
 - **Hold FX on MODEL:** the preset's MIDI table, every control of this preset (`CC 7  SFX PEDAL +VOL`), then the editor's
   in grey (`ALL: ...`: they work in every preset). The knob picks, hold FX clears, HOME goes back.
@@ -491,7 +521,7 @@ The protocol: [EDITOR-PROTOCOL.md](EDITOR-PROTOCOL.md) (protocol 8 for this firm
 | SEND | ON, OFF | ON | the pedal sends Program and Control Change for what you do on it |
 | CLOCK > DELAY | ON, OFF | OFF | a computer's MIDI clock sets the delay's time |
 | SWITCH | MOMENT, LATCH | MOMENT | how CC 8 to 19 flip a block: MOMENT for a switch that sends 127 then 0 when let go, LATCH for one that sends one message a press |
-| PLAY VIEW | CHAIN, SWITCHES, SCENES | CHAIN | PLAY's view (also: hold CAB) |
+| PLAY VIEW | CHAIN, SWITCHES, SCENES | CHAIN | PLAY's view, and so the footswitches' mode (also: hold CAB, or both footswitches) |
 | SCENE+SWITCH | SWITCH WINS, SCENE WINS | SWITCH WINS | whether scenes set a block that has its own switch |
 | SCENE FOOTSW | SCENES, PRESETS | SCENES | what the footswitches do in SCENES' view |
 | VOL PEDAL | AT INPUT, BEFORE DLY | AT INPUT | where the expression pedal's volume acts |
@@ -566,8 +596,8 @@ For the curious, and for anyone who wants to help. Each topic links the document
   through simulated power cuts, the installer and the editor against simulated pedals. [BUILDING.md](BUILDING.md).
 - **The simulator:** `make sim` runs the pedal's own screen, editor and preset code on your computer, with a front panel
   you can click, and the sound through bundled guitar loops. [SIMULATOR.md](SIMULATOR.md).
-- **The room left** in beta 53: 2,172 bytes of the app's 644,928 in the flash, 1,088 bytes of main RAM and 424 bytes of the RAM
-  code window, and 18 bytes of the preset store. Every new feature has to pay for itself.
+- **The room left** in beta 54: 1,892 bytes of the app's 644,928 in the flash, 928 bytes of main RAM and 216 bytes of the RAM
+  code window, and 4 bytes of the preset store. Every new feature has to pay for itself.
 
 ## 13. What it leaves out
 

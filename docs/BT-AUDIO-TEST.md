@@ -1686,6 +1686,36 @@ Then, after the first try on the pedal:
    VERY NARROW, then VERY WIDE: a notch, then a scoop. Back to 0 DB everywhere: the sound as before. Leave SETTINGS, switch
    off and on: the EQ is kept. The editor's two EQ rows show it and set it.
 
+## Test build 54 (ettorebox beta 54): the footswitches' three modes
+
+Beta 53 with the pedal's two footswitches doing more, with no Chocolate: **both footswitches**, let go at once, turn them to
+their next mode, PLAY's next view: **PRESETS** (CHAIN: the next and previous preset), **STOMP** (SWITCHES: what each one is
+learned on in this preset) and **SCENES** (the next and previous scene). A mode the preset has nothing for is passed by. The
+footer says which (`FOOTSW: STOMP`; `FOOTSW: PRESETS ONLY` where there is no other). **Held 0.7 s**, both open the tuner
+(before: pressed). A footswitch is learned for STOMP as a controller's switch: on a block's ON row (hold FX, PUSH, press it)
+or on a scene (SCENES' view, hold FX on its tile). One footswitch can have several blocks, switched together (all on if the
+first is off, else all off); on a scene, a press goes there and the next back. Kept with the preset's learned controls as
+CC 126 (left) and 127 (right): no new store, no editor protocol change; a controller's CC 126 or 127 is dropped. The editor
+shows them as "Left footswitch" and "Right footswitch". To make room, the editor's command handler (`firmware/px_editor.h`
+`ed_handle`) is compiled for size in this image, as the pages' drawing is since beta 53. The details: [MANUAL.md](MANUAL.md),
+"The footswitches' three modes".
+
+### What to check
+
+1. A preset with nothing learned and no scene: press both and let go: `FOOTSW: PRESETS ONLY`, the preset as it was (the first
+   footswitch's step taken back). Hold both: the tuner after 0.7 s; a footswitch or HOME leaves it.
+2. On DRV's page select ON, hold FX, PUSH, press the left footswitch: after about a second `LEARNED: FOOT L`, and the preset
+   did not change. The same on a second block (a chorus on MOD). The block page's header says `FOOT L`.
+3. Press both and let go: `FOOTSW: STOMP`, the two blocks in big tiles marked `FOOT L`. The left footswitch switches both
+   together, at once, no click; the right one (nothing learned) goes to the next preset.
+4. In a preset with scenes stored: both, let go, three times: STOMP, SCENES, PRESETS. In SCENES the footswitches step the
+   scenes; the blocks on the left footswitch stay as they are (SWITCH WINS).
+5. In SCENES' view hold FX on SCENE 2, press the right footswitch: `LEARNED: FOOT R`. In STOMP the right one goes to SCENE 2,
+   again back to the scene before.
+6. Hold FX on MODEL: the preset's MIDI table lists `FOOT L` and `FOOT R`. The editor's MIDI page, "Learned by the pedal, only
+   in" this preset: "Left footswitch", "Right footswitch".
+7. The web editor still reads, writes and saves presets as before (its command handler is now compiled for size).
+
 ## Checked on a computer
 
 - `tests/test_bt_ring.c`: a phone at 44.1 kHz with 15 ms of jitter, the pedal at its real 44,117.6 Hz, 60 s: no underrun, the rate

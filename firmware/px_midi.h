@@ -432,6 +432,11 @@ static int px_midi_map_valid(const px_map_t *e)        /* an entry as stored: em
  * slot takes its own with it (px_midi_pl_copy) */
 #define PXM_PL_N 64u
 #define PXM_PL_SLOTS 52u                               /* (px_store.h ST_NSLOT) */
+/* ettorebox beta 54: the pedal's own footswitches, learned as a controller's switch is (on a block page's ON row, on a scene in
+ * SCENES' view), with these two numbers; in SWITCHES' view they switch what they have (ui.h ui_stomp). One may have several rows
+ * in a preset (px_midi_pl_put). No controller's: px_midi_io.h drops a received CC 126 or 127 */
+#define PXM_CC_FSL 126u                                /* the left footswitch */
+#define PXM_CC_FSR 127u                                /* the right one */
 typedef struct { uint8_t slot, src, dst, mode, lo, hi, clo, chi; } px_pl_t;   /* slot 0xFF: an empty entry. lo / hi (test
                                        * build 47): a pedal's setting at the heel and the toe, 0..100; clo / chi (48): the values
                                        * the pedal sends there, 0..127 (the same twice: 0 and 127) */
@@ -498,13 +503,14 @@ static uint32_t px_midi_pl_copy(uint32_t from, uint32_t to)
     }
     return lost;
 }
-/* one control a meaning, one row a control, in a preset: this one replaces what the preset had for either. 0, or -1: full */
+/* one control a meaning, one row a control, in a preset: this one replaces what the preset had for either (beta 54: a footswitch
+ * keeps its other rows, all switched together). 0, or -1: full */
 static int px_midi_pl_put(uint32_t slot, uint32_t src, uint32_t dst, uint32_t mode, uint32_t d_other, uint32_t lo, uint32_t hi)
 {
     int free_i = -1;
     for (uint32_t i = 0; i < PXM_PL_N; i++) {
         px_pl_t *e = &mid_pl[i];
-        if (e->slot == slot && (e->src == src || e->dst == dst || e->dst == d_other)) memset(e, 0xFF, sizeof *e);
+        if (e->slot == slot && ((e->src == src && src < PXM_CC_FSL) || e->dst == dst || e->dst == d_other)) memset(e, 0xFF, sizeof *e);
         if (e->slot == slot && (mode & PXM_PL_DUAL)) e->mode &= (uint8_t)~PXM_PL_DUAL;   /* (51: one two-job pedal a preset) */
         if (e->slot == 0xFFu && free_i < 0) free_i = (int)i;
     }
