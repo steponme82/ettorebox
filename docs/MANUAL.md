@@ -1,10 +1,11 @@
 # ettorebox manual
 
 ettorebox is guitar firmware for the M-VAVE BlackBox, built on [OpenPocket](https://github.com/isod89/openpocket). This
-manual covers beta 53: installing it, every control and page of the pedal, the sounds, presets and scenes, controllers,
+manual covers beta 54: installing it, every control and page of the pedal, the sounds, presets and scenes, controllers,
 Bluetooth, USB, the web editor, and what is inside. Up to beta 51 the pedal showed OpenPocket's name (start-up screen,
 Bluetooth, USB); beta 53 made the GT page the preset's input ([4](#the-presets-input-the-gt-page)), with an input check that
-tells you, and sets, the level your guitar needs ([4](#the-input-check)).
+tells you, and sets, the level your guitar needs ([4](#the-input-check)); beta 54 gave the two footswitches three modes
+([The footswitches' three modes](#the-footswitches-three-modes)) and steadied LOW OCTAVE's high notes.
 
 It is a beta. Keep M-VAVE's own firmware file at hand, and read [Before you install](#before-you-install) first.
 
@@ -228,6 +229,8 @@ detail: [SOUNDS-AND-CONTROLS.md](SOUNDS-AND-CONTROLS.md); ettorebox's own effect
 - **The analog and tape delays** (ANALOG BBD, MEMORY MAN, TAPE EP-3, SPACE ECHO, LO-FI) self-oscillate above FDBK about
   90, like the real ones: lower FDBK to stop it.
 - **TAILS** (SETTINGS): the delay and the reverb ring out when they go off, and across a preset change.
+- **LOW OCTAVE** follows the note you play: from beta 54 the high notes keep their own octave, steady, even over a single
+  coil's hum, and COMP no longer adds an octave to the notes above RANGE ([OWN-FX.md](OWN-FX.md), "The top notes").
 - **Levels:** every amp plays at the same loudness with GAIN at noon, and a block switched on with its knobs at noon keeps
   the loudness. PRESET LVL balances your presets. The output ends in a soft limiter, not a hard clip.
 - **GUITAR TONE and PICKUP** (SETTINGS): the input loads your pickup as a real amp's input would, named by the sound
@@ -596,7 +599,7 @@ For the curious, and for anyone who wants to help. Each topic links the document
   through simulated power cuts, the installer and the editor against simulated pedals. [BUILDING.md](BUILDING.md).
 - **The simulator:** `make sim` runs the pedal's own screen, editor and preset code on your computer, with a front panel
   you can click, and the sound through bundled guitar loops. [SIMULATOR.md](SIMULATOR.md).
-- **The room left** in beta 54: 1,892 bytes of the app's 644,928 in the flash, 928 bytes of main RAM and 216 bytes of the RAM
+- **The room left** in beta 54: 4,172 bytes of the app's 644,928 in the flash, 928 bytes of main RAM and 296 bytes of the RAM
   code window, and 4 bytes of the preset store. Every new feature has to pay for itself.
 
 ## 13. What it leaves out

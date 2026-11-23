@@ -6,7 +6,7 @@ pedal's output**, with the guitar. Since test build 52 it is ettorebox's firmwar
 
 It is a test image, its own build target (`make bt`). The normal firmware and the installer's packages are unchanged.
 
-> **Status: test build 53, ettorebox beta 53** (below; build 50 runs on a pedal: the guided learn, the scenes and their names; build 38 is the one
+> **Status: test build 54, ettorebox beta 54** (below; build 50 runs on a pedal: the guided learn, the scenes and their names; build 38 is the one
 > played longest, about 2 hours of music). Test build 27 brought the web
 > editor over Bluetooth. Up to test build 14: builds 1 to 10 ran on a pedal: the
 > radio starts, a phone sees the pedal and links, but no phone
@@ -1686,19 +1686,32 @@ Then, after the first try on the pedal:
    VERY NARROW, then VERY WIDE: a notch, then a scoop. Back to 0 DB everywhere: the sound as before. Leave SETTINGS, switch
    off and on: the EQ is kept. The editor's two EQ rows show it and set it.
 
-## Test build 54 (ettorebox beta 54): the footswitches' three modes
+## Test build 54 (ettorebox beta 54): the footswitches' three modes, LOW OCTAVE's top notes
 
-Beta 53 with the pedal's two footswitches doing more, with no Chocolate: **both footswitches**, let go at once, turn them to
-their next mode, PLAY's next view: **PRESETS** (CHAIN: the next and previous preset), **STOMP** (SWITCHES: what each one is
-learned on in this preset) and **SCENES** (the next and previous scene). A mode the preset has nothing for is passed by. The
-footer says which (`FOOTSW: STOMP`; `FOOTSW: PRESETS ONLY` where there is no other). **Held 0.7 s**, both open the tuner
-(before: pressed). A footswitch is learned for STOMP as a controller's switch: on a block's ON row (hold FX, PUSH, press it)
-or on a scene (SCENES' view, hold FX on its tile). One footswitch can have several blocks, switched together (all on if the
-first is off, else all off); on a scene, a press goes there and the next back. Kept with the preset's learned controls as
-CC 126 (left) and 127 (right): no new store, no editor protocol change; a controller's CC 126 or 127 is dropped. The editor
-shows them as "Left footswitch" and "Right footswitch". To make room, the editor's command handler (`firmware/px_editor.h`
-`ed_handle`) is compiled for size in this image, as the pages' drawing is since beta 53. The details: [MANUAL.md](MANUAL.md),
-"The footswitches' three modes".
+Beta 53 with two changes: the pedal's two footswitches do more, with no Chocolate, and LOW OCTAVE's top notes are steady.
+
+- **The footswitches' three modes.** **Both footswitches**, let go at once, turn them to their next mode, PLAY's next view:
+  **PRESETS** (CHAIN: the next and previous preset), **STOMP** (SWITCHES: what each one is learned on in this preset) and
+  **SCENES** (the next and previous scene). A mode the preset has nothing for is passed by. The footer says which
+  (`FOOTSW: STOMP`; `FOOTSW: PRESETS ONLY` where there is no other). **Held 0.7 s**, both open the tuner (before: pressed).
+  A footswitch is learned for STOMP as a controller's switch: on a block's ON row (hold FX, PUSH, press it) or on a scene
+  (SCENES' view, hold FX on its tile). One footswitch can have several blocks, switched together (all on if the first is
+  off, else all off); on a scene, a press goes there and the next back. Kept with the preset's learned controls as CC 126
+  (left) and 127 (right): no new store, no editor protocol change; a controller's CC 126 or 127 is dropped. The editor
+  shows them as "Left footswitch" and "Right footswitch". The details: [MANUAL.md](MANUAL.md), "The footswitches' three
+  modes".
+- **LOW OCTAVE's top notes.** On the pedal they "jumped in and out", as a MIDI glitch would: over a high note the tilt that
+  lets a chord's root lead raised the mains' hum above the note, and the octave's pitch followed the hum's (a 25 Hz rumble)
+  while its level followed the note. Now one note from C3 up takes its octave from the band's own arrow, where the hum stays
+  45 dB under it; chords and the low strings as before; and COMP no longer raises a note above RANGE into an octave. The
+  details and the numbers: [OWN-FX.md](OWN-FX.md), "The top notes".
+
+The room both take. The editor's command handler (`firmware/px_editor.h` `ed_handle`) is compiled for size in this image,
+as the pages' drawing is since beta 53. LOW OCTAVE's choice runs at sr / 8 in the RAM code (`lo_fast`, now compiled for
+size); PAD's `pad_flatten`, once per caught chord, went back to the flash; PAD's grain tables are sized by its 2 grains,
+which gives LOW OCTAVE's new state its 72 bytes (the delay ring as it was); the knob texts and the factory presets are
+compiled for size in this image only. Flash 4,172 bytes free (beta 53: 604), RAM code 296 (216), RAM 928 (928). The
+start-up screen says `BETA 54`. The release image is unchanged.
 
 ### What to check
 
@@ -1715,6 +1728,12 @@ shows them as "Left footswitch" and "Right footswitch". To make room, the editor
 6. Hold FX on MODEL: the preset's MIDI table lists `FOOT L` and `FOOT R`. The editor's MIDI page, "Learned by the pedal, only
    in" this preset: "Left footswitch", "Right footswitch".
 7. The web editor still reads, writes and saves presets as before (its command handler is now compiled for size).
+8. LOW OCTAVE as you play it (RANGE at D3, or LOWEST), DRY 100, OCT -1 50: single notes up the neck, from the 5th fret of the
+   D string to the 12th of the high E. Each note's octave steady through its decay: no jumping in and out, no rumble under it.
+9. The same with a single-coil pickup and the guitar's volume up (the hum was the trigger).
+10. Chords: an open G, an E5 power chord, an A minor barre: the root's octave as in beta 53.
+11. COMP 100 with RANGE at D3: notes above D3 stay without an octave.
+12. A D major triad at the 10th fret with LOWEST: does its octave sound wrong? (the one case that got worse on the computer)
 
 ## Checked on a computer
 
@@ -1787,6 +1806,17 @@ shows them as "Left footswitch" and "Right footswitch". To make room, the editor
   masks the blocks alone, the GT catalogue's names and texts, SET on GT's 4th and 5th, no controller learned there, SAVE
   keeping the tone and INPUT); `tests/test_store.c` (the filter given the tone and the pickup). The release image is v42's byte
   for byte (`d96b2adf`). Not covered: the glide by ear, and the sound of the tones on a real guitar: only the pedal can tell.
+- Test build 54, the footswitches' three modes: `tests/uisim.c` `feet_modes` (a preset with nothing learned: PRESETS ONLY,
+  the first footswitch's step taken back; the guided learn on ON taking the left footswitch, two rows for it, the preset
+  kept; STOMP switching both blocks together and back, the right one with nothing learned stepping the presets; the three
+  modes in turn with scenes stored; a scene learned on the right footswitch, gone to and back in STOMP; SWITCH WINS; both
+  held 0.7 s: the tuner, the mode kept; the notes within their boxes; the MIDI table's FOOT L and FOOT R; a setting's learn
+  deaf to the footswitches); `tests/midiio.c` (a controller's CC 126 and 127 dropped). LOW OCTAVE's top notes:
+  `tests/engine/lowoct.c` (top notes over hum: at most 2 glitches in a note's first 12 dB, beta 53 10 to 27, and the octave
+  within 10 ms of the note; COMP 100 at RANGE D3 keeping B3 and E4 15 dB under a low E's octave, beta 53 3 dB);
+  `tests/engine/bassout.c` (its tolerance 0.2 dB, was 0.1: the limiter meets the octave's new phase). The release image is
+  v42's byte for byte (`d96b2adf`). Not covered: the octave on a real guitar and the footswitches under the feet: only the
+  pedal can tell.
 - Test build 41, the Chocolate by cable: `tests/test_usb_host.c` (felucca-bsp's descriptor parser on the Chocolate's layout as
   macOS reads it, configuration 1, HID at interface 0 with its interrupt endpoint, Audio Control at 1, MIDI streaming at 2,
   with bulk and interrupt endpoints and two numberings, a cut read, no MIDI interface, unusable sizes; the packets passed on,
@@ -1833,7 +1863,7 @@ shows them as "Left footswitch" and "Right footswitch". To make room, the editor
   12 bytes, and the power-on key's record); `tools/jlfold.py fold` on the library's IR (the same 149 constants folded and 86
   print helpers emptied as the probe in CI); v42's `tests/test_aorder.c` (the callbacks' order).
 - The image's own effects (tests/run_tests.sh, [OWN-FX.md](OWN-FX.md)): `tests/ownfx_equiv.sh`, every existing model with
-  `PX_OWN_FX` and without, 5,460 runs bit for bit; LOW OCTAVE (`tests/engine/lowoct.c`, 18 checks) and PAD
+  `PX_OWN_FX` and without, 5,460 runs bit for bit; LOW OCTAVE (`tests/engine/lowoct.c`, 21 checks) and PAD
   (`tests/engine/pad.c`, 15) as the image builds the engine and with the host's flags, also under ASan and UBSan, both
   giving v40's output bit for bit; the PAD's footswitch against v42's tuner (`tests/uisim.c` built with `PX_OWN_FX`, 16
   gestures, v42's 48 screens unchanged) and CC 64 (`tests/midiio.c`); without `PX_OWN_FX` the engine and `openpocket.c`

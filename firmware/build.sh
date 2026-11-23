@@ -128,7 +128,9 @@ RAM_DSP="px_engine_process px_engine_part px_wet_run px_wet_swap dly_block rv_bl
   ps_voice_run syn_organ_run pitch_run cab_detail_run gate_run comp_run bq_chain"
 # the Bluetooth audio image's own effects (PX_OWN_FX): LOW OCTAVE's octave, SYN PAD's grains (px_pad_press and px_pad_stop,
 # which the main loop calls, stay in the flash)
-[ -n "$OP_BT" ] && RAM_DSP="$RAM_DSP lo_fast pad_run pad_step pad_grain_new pad_flatten"
+[ -n "$OP_BT" ] && RAM_DSP="$RAM_DSP lo_fast pad_run pad_step pad_grain_new"
+# (ettorebox beta 54: PAD's pad_flatten, once per caught chord, went back to the flash to make room for LOW OCTAVE's choice
+# of arrow, lo_fast)
 # (test build 43: USB RETURN's mix into the chain, px_rt_mix, as every block's; test build 44: the in-phase shifter voice of
 # SHIMMER, BARITONE and STRINGS, ox_voice, every sample. Its search, ox_align, MONO's tracker, mono_est, and STRINGS' and TAPE
 # FLUTE's samples, syn_strings and syn_flute, stay in the flash: the window is full)

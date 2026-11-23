@@ -299,9 +299,15 @@ typedef struct {
     float lo_g, lo_gk, lo_gn, lo_glp, lo_glk;         /* GROWL: the octave alone through a soft clipper */
     float lo_ax[8][2], lo_ay[8][2], lo_ad, lo_hr, lo_hi;   /* phase halving: the 90-degree pair, the half phase */
     float lo_t[6], lo_tk;                             /* the tilt: the lowest note leads the phase */
-    int lo_np, lo_lowest;
+    int lo_np;
     float lo_bx[8][2], lo_by[8][2], lo_bd;            /* a second 90-degree pair, on the band before the tilt */
     float lo_amp, lo_aatk, lo_arel, lo_c;             /* the octave's level, COMP */
+    /* ettorebox beta 54 (px_dsp.c lo_fast): which arrow the octave halves, the tilted one or the band's */
+    float lo_pr, lo_pi, lo_qr, lo_qi, lo_mt, lo_mb;   /* the tilted and the band's arrows a sample ago; their steps */
+    float lo_c1r, lo_c1i, lo_c2r, lo_c2i, lo_pb, lo_qs;   /* the band turned back by the tilted arrow, its power; q */
+    float lo_rr, lo_ri, lo_env, lo_envs, lo_mbs, lo_bj;   /* the turn kept across a switch; the guitar's level (now, over
+                                                         100 ms); the band's step over 40 ms and its wander */
+    uint8_t lo_lowest, lo_src, lo_one, lo_spare;      /* RANGE at LOWEST; 1: the tilted arrow; 1: one note */
     /* PAD: a chord caught on a footswitch (px_pad_press) at sr / 8 into one of three 16-bit slices, played as
      * overlapping grains; one slice fades in, one fades out, one records */
     volatile uint32_t pad_press, pad_stop;            /* bumped by the UI and MIDI only (px_pad_press / px_pad_stop) */
@@ -309,7 +315,8 @@ typedef struct {
     int pad_k, pad_cap, pad_capr, pad_wait, pad_skip, pad_act;
     float pad_g[3], pad_gt[3], pad_rk[3], pad_ka, pad_kr, pad_kf, pad_env, pad_slow, pad_mot, pad_mix;
     int pad_attp;
-    float pad_gp[3][4], pad_gi[3][4], pad_gt0[3][4];  /* each slice's grains (PX_PAD_NG): start, step, phase */
+    float pad_gp[3][PX_PAD_NG], pad_gi[3][PX_PAD_NG], pad_gt0[3][PX_PAD_NG];   /* each slice's grains: start, step, phase
+                                                         (beta 54: sized by PX_PAD_NG, was 4: LOW OCTAVE took the room) */
     px_bq pad_aa[2], pad_tone[2];
     float pad_y0, pad_y1;
     int dly_w, dly_type, dly_heads, rev_start, rev_cnt, dly_tick;
