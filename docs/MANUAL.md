@@ -316,7 +316,8 @@ Like Helix's snapshots: four scenes a preset, each a set of blocks on and off. R
 - **Scenes and switches:** a block can have its own switch and be in the scenes too. SETTINGS' **SCENE+SWITCH** decides:
   **SWITCH WINS** (the default: the switch owns that block, scenes set the others) or **SCENE WINS** (scenes set it too;
   the switch's change lasts until the next scene).
-- **The footswitches in SCENES' view:** SETTINGS' **SCENE FOOTSW**: **SCENES** (the default) or **PRESETS**.
+- **The footswitches in SCENES' view:** SETTINGS' **SCENE FOOTSW**: **SCENES** (the default) or **PRESETS**. In a preset
+  with no scene yet they step the presets: make the first with the knob and PUSH (or in the web editor).
 - **Tone and input:** each scene can have a guitar tone of its own (the web editor's scenes grid, TONE: **Preset**, or one
   of the nine), over the preset's GTR TONE, and an INPUT step over the preset's INPUT (INPUT: **Patch**, or -6, -3, +3, +6,
   +9, +12, +15 dB; or the input check while the scene plays). SAVE keeps them with the scene.
@@ -332,10 +333,10 @@ Press both footswitches and let go: they go to their next mode, and PLAY's view 
 | --- | --- | --- |
 | **PRESETS** | CHAIN | the next / previous preset |
 | **STOMP** | SWITCHES | each one switches what it is learned on in this preset; one with nothing learned steps the presets |
-| **SCENES** | SCENES | the next / previous scene |
+| **SCENES** | SCENES | the next / previous scene; in a preset with no scene yet, the presets |
 
-- **Only what the preset has:** STOMP comes round only in a preset with a footswitch learned, SCENES only in one with a scene
-  stored. In a preset with neither, both footswitches say `FOOTSW: PRESETS ONLY`.
+- **Always the three in turn**, in every preset. One the preset has nothing for (no footswitch learned, no scene yet) says
+  so in amber, `FOOTSW: STOMP (EMPTY)`, and there the footswitches step the presets.
 - **A footswitch for STOMP:** learn it as a controller's switch ([6.3](#63-learning-a-control-on-the-pedal)). On a block's
   page select ON, hold FX, PUSH, and press the footswitch (`LEARNED: FOOT L`). Learn the same footswitch on more blocks and
   they go together: all on if the first is off, else all off. For example a 12-STRING and a chorus on the left, a boost on
@@ -599,7 +600,7 @@ For the curious, and for anyone who wants to help. Each topic links the document
   through simulated power cuts, the installer and the editor against simulated pedals. [BUILDING.md](BUILDING.md).
 - **The simulator:** `make sim` runs the pedal's own screen, editor and preset code on your computer, with a front panel
   you can click, and the sound through bundled guitar loops. [SIMULATOR.md](SIMULATOR.md).
-- **The room left** in beta 54: 4,172 bytes of the app's 644,928 in the flash, 928 bytes of main RAM and 296 bytes of the RAM
+- **The room left** in beta 54: 4,176 bytes of the app's 644,928 in the flash, 928 bytes of main RAM and 296 bytes of the RAM
   code window, and 4 bytes of the preset store. Every new feature has to pay for itself.
 
 ## 13. What it leaves out

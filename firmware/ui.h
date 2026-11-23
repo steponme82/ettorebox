@@ -694,9 +694,12 @@ static int ui_learn_line(char *t, uint16_t *c)        /* a block page's footer f
     switch (ul.note) {
     case UL_DONE: b_str(t, "LEARNED: "); ui_src(t, ul.cc); *c = GRN; return 1;
     case UL_CLEARED: ui_src(t, ul.cc); b_str(t, " CLEARED"); *c = UI_ACC; return 1;
-    case UL_FEET: {                                    /* (beta 54: both footswitches, the mode they are in now) */
-        static const char *const FEET[4] = {"PRESETS", "STOMP", "SCENES", "PRESETS ONLY"};
-        b_str(t, "FOOTSW: "); b_str(t, FEET[ul.cc & 3u]); *c = GRN; return 1;
+    case UL_FEET: {                                    /* (beta 54: both footswitches, the mode they are in now; ul.cc bit 2: this
+                                                        * preset has nothing for it, in amber: there they step the presets) */
+        static const char *const FEET[3] = {"PRESETS", "STOMP", "SCENES"};
+        b_str(t, "FOOTSW: "); b_str(t, FEET[ul.cc & 3u]);
+        if (ul.cc & 4u) b_str(t, " (EMPTY)");
+        *c = ul.cc & 4u ? UI_ACC : GRN; return 1;
     }
     case UL_FULL: b_str(t, "LEARN: 64 IN USE, FULL"); *c = RED; return 1;
     case UL_CANCEL: b_str(t, "LEARN: CANCELLED"); *c = UI_DIM; return 1;
@@ -901,7 +904,7 @@ static uint32_t live_list(uint8_t *blk, uint8_t *cc)   /* (blk PX_NBLK + n: scen
     }
     return n;
 }
-static int ui_fs_any(void)                             /* (beta 54) this preset has a footswitch learned: STOMP is there */
+static int ui_fs_any(void)                             /* (beta 54) this preset has a footswitch learned: else STOMP is EMPTY */
 {
     for (uint32_t i = 0; i < PXM_PL_N; i++) if (mid_pl[i].slot == cur_preset && mid_pl[i].src >= PXM_CC_FSL) return 1;
     return 0;
@@ -2262,14 +2265,15 @@ static int ui_stomp(uint32_t src)
     ug.fs_tog = (uint8_t)(n != 0);
     return n != 0;
 }
-/* beta 54: both footswitches let go within 0.7 s (ui_buttons): their next mode, which is PLAY's next view: CHAIN (the presets),
- * SWITCHES (STOMP), SCENES; one this preset has none of (no footswitch learned, no scene stored) is passed by. The footer says
- * which, PRESETS ONLY where there is no other. Held 0.7 s: the tuner */
+/* beta 54: both footswitches let go within 0.7 s (ui_buttons): their next mode, which is PLAY's next view, the three in turn in
+ * every preset (the user's choice): CHAIN (the presets), SWITCHES (STOMP), SCENES. The footer says which; one this preset has
+ * nothing for (no footswitch learned, no scene yet) says (EMPTY) in amber, and there the footswitches step the presets.
+ * Held 0.7 s: the tuner */
 static void ui_feet_mode(void)
 {
-    uint32_t v = px_live;
-    do v = (v + 1u) % 3u; while (v && !(v == 1u ? ui_fs_any() : px_sc.set != 0));
-    ul.note = UL_FEET; ul.note_t = ug.now; ul.cc = (uint8_t)(v == px_live ? 3u : v);
+    const uint32_t v = (px_live + 1u) % 3u;
+    ul.note = UL_FEET; ul.note_t = ug.now;
+    ul.cc = (uint8_t)(v | ((v == 1u ? !ui_fs_any() : v == 2u && !px_sc.set) ? 4u : 0u));
     px_live = (uint8_t)v; lv_peek = 0; sc_sel = px_sc.cur;
     ui_home();
 }
@@ -2322,7 +2326,9 @@ static void ui_action(int a)
 #endif
     }
 #if PX_OWN_FX
-    if ((a == UB_FSUP || a == UB_FSDN) && px_live == 2u && !px_sc_feet) {   /* test build 49: SCENES' view: the scenes, round */
+    if ((a == UB_FSUP || a == UB_FSDN) && px_live == 2u && !px_sc_feet && px_sc.set) {   /* test build 49: SCENES' view: the
+                                                       * scenes, round (beta 54: a preset with none yet: the presets, so a mode
+                                                       * passed through makes no scenes; the first is the knob's and PUSH's) */
         ug.fs_sc = (uint8_t)(1u + px_sc.cur);
         ui_scene_recall((px_sc.cur + (a == UB_FSUP ? 1u : PX_SC_N - 1u)) % PX_SC_N);
         sc_sel = px_sc.cur;

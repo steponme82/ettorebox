@@ -1692,8 +1692,9 @@ Beta 53 with two changes: the pedal's two footswitches do more, with no Chocolat
 
 - **The footswitches' three modes.** **Both footswitches**, let go at once, turn them to their next mode, PLAY's next view:
   **PRESETS** (CHAIN: the next and previous preset), **STOMP** (SWITCHES: what each one is learned on in this preset) and
-  **SCENES** (the next and previous scene). A mode the preset has nothing for is passed by. The footer says which
-  (`FOOTSW: STOMP`; `FOOTSW: PRESETS ONLY` where there is no other). **Held 0.7 s**, both open the tuner (before: pressed).
+  **SCENES** (the next and previous scene), always the three in turn. The footer says which (`FOOTSW: STOMP`); one the
+  preset has nothing for (no footswitch learned, no scene yet) says `FOOTSW: STOMP (EMPTY)` in amber, and there the
+  footswitches step the presets (a SCENES with no scene makes none). **Held 0.7 s**, both open the tuner (before: pressed).
   A footswitch is learned for STOMP as a controller's switch: on a block's ON row (hold FX, PUSH, press it) or on a scene
   (SCENES' view, hold FX on its tile). One footswitch can have several blocks, switched together (all on if the first is
   off, else all off); on a scene, a press goes there and the next back. Kept with the preset's learned controls as CC 126
@@ -1710,13 +1711,15 @@ The room both take. The editor's command handler (`firmware/px_editor.h` `ed_han
 as the pages' drawing is since beta 53. LOW OCTAVE's choice runs at sr / 8 in the RAM code (`lo_fast`, now compiled for
 size); PAD's `pad_flatten`, once per caught chord, went back to the flash; PAD's grain tables are sized by its 2 grains,
 which gives LOW OCTAVE's new state its 72 bytes (the delay ring as it was); the knob texts and the factory presets are
-compiled for size in this image only. Flash 4,172 bytes free (beta 53: 604), RAM code 296 (216), RAM 928 (928). The
+compiled for size in this image only. Flash 4,176 bytes free (beta 53: 604), RAM code 296 (216), RAM 928 (928). The
 start-up screen says `BETA 54`. The release image is unchanged.
 
 ### What to check
 
-1. A preset with nothing learned and no scene: press both and let go: `FOOTSW: PRESETS ONLY`, the preset as it was (the first
-   footswitch's step taken back). Hold both: the tuner after 0.7 s; a footswitch or HOME leaves it.
+1. A preset with nothing learned and no scene: press both and let go, three times: `FOOTSW: STOMP (EMPTY)` and
+   `FOOTSW: SCENES (EMPTY)` in amber, then `FOOTSW: PRESETS`; the preset as it was each time (the first footswitch's step
+   taken back), no scene made, not EDITED. In the two empty ones a footswitch steps the presets. Hold both: the tuner after
+   0.7 s; a footswitch or HOME leaves it.
 2. On DRV's page select ON, hold FX, PUSH, press the left footswitch: after about a second `LEARNED: FOOT L`, and the preset
    did not change. The same on a second block (a chorus on MOD). The block page's header says `FOOT L`.
 3. Press both and let go: `FOOTSW: STOMP`, the two blocks in big tiles marked `FOOT L`. The left footswitch switches both
@@ -1806,17 +1809,17 @@ start-up screen says `BETA 54`. The release image is unchanged.
   masks the blocks alone, the GT catalogue's names and texts, SET on GT's 4th and 5th, no controller learned there, SAVE
   keeping the tone and INPUT); `tests/test_store.c` (the filter given the tone and the pickup). The release image is v42's byte
   for byte (`d96b2adf`). Not covered: the glide by ear, and the sound of the tones on a real guitar: only the pedal can tell.
-- Test build 54, the footswitches' three modes: `tests/uisim.c` `feet_modes` (a preset with nothing learned: PRESETS ONLY,
-  the first footswitch's step taken back; the guided learn on ON taking the left footswitch, two rows for it, the preset
-  kept; STOMP switching both blocks together and back, the right one with nothing learned stepping the presets; the three
-  modes in turn with scenes stored; a scene learned on the right footswitch, gone to and back in STOMP; SWITCH WINS; both
-  held 0.7 s: the tuner, the mode kept; the notes within their boxes; the MIDI table's FOOT L and FOOT R; a setting's learn
-  deaf to the footswitches); `tests/midiio.c` (a controller's CC 126 and 127 dropped). LOW OCTAVE's top notes:
-  `tests/engine/lowoct.c` (top notes over hum: at most 2 glitches in a note's first 12 dB, beta 53 10 to 27, and the octave
-  within 10 ms of the note; COMP 100 at RANGE D3 keeping B3 and E4 15 dB under a low E's octave, beta 53 3 dB);
-  `tests/engine/bassout.c` (its tolerance 0.2 dB, was 0.1: the limiter meets the octave's new phase). The release image is
-  v42's byte for byte (`d96b2adf`). Not covered: the octave on a real guitar and the footswitches under the feet: only the
-  pedal can tell.
+- Test build 54, the footswitches' three modes: `tests/uisim.c` `feet_modes` (a preset with nothing learned: all three in
+  turn, the empty two in amber, stepping the presets there and making no scene, the first footswitch's step taken back; the
+  guided learn on ON taking the left footswitch, two rows for it, the preset kept; STOMP switching both blocks together and
+  back, the right one with nothing learned stepping the presets; the three modes in turn with scenes stored; a scene learned
+  on the right footswitch, gone to and back in STOMP; SWITCH WINS; both held 0.7 s: the tuner, the mode kept; the notes within
+  their boxes; the MIDI table's FOOT L and FOOT R; a setting's learn deaf to the footswitches); `tests/midiio.c` (a
+  controller's CC 126 and 127 dropped). LOW OCTAVE's top notes: `tests/engine/lowoct.c` (top notes over hum: at most 2
+  glitches in a note's first 12 dB, beta 53 10 to 27, and the octave within 10 ms of the note; COMP 100 at RANGE D3 keeping B3
+  and E4 15 dB under a low E's octave, beta 53 3 dB); `tests/engine/bassout.c` (its tolerance 0.2 dB, was 0.1: the limiter
+  meets the octave's new phase). The release image is v42's byte for byte (`d96b2adf`). Not covered: the octave on a real
+  guitar and the footswitches under the feet: only the pedal can tell.
 - Test build 41, the Chocolate by cable: `tests/test_usb_host.c` (felucca-bsp's descriptor parser on the Chocolate's layout as
   macOS reads it, configuration 1, HID at interface 0 with its interrupt endpoint, Audio Control at 1, MIDI streaming at 2,
   with bulk and interrupt endpoints and two numberings, a cut read, no MIDI interface, unusable sizes; the packets passed on,
