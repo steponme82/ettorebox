@@ -571,6 +571,25 @@ int main(void)
            "CC 65 to 68: SCENE 1 to 4 at any value, through a switch learned on one, not on SETTINGS' page");
         px_midi_pl_clear();
     }
+    {   /* ettorebox beta 54: 126 and 127 are the pedal's own footswitches (learned for STOMP, ui.h ui_stomp): a controller's CC 126
+         * or 127 is dropped, learned or not, and never taken by a learn; a footswitch keeps several rows in a preset */
+        reset();
+        px_midi_map_clear(); px_midi_pl_clear();
+        px_midi_pl_put(cur_preset, PXM_CC_FSL, PXM_CC_TOGGLE0 + PX_B_EQ, PXM_MAP_EACH, PXM_CC_ON0 + PX_B_EQ, 0u, 100u);
+        px_midi_pl_put(cur_preset, PXM_CC_FSL, PXM_CC_TOGGLE0 + PX_B_MOD, PXM_MAP_EACH, PXM_CC_ON0 + PX_B_MOD, 0u, 100u);
+        const int two = px_midi_pl_count(cur_preset) == 2u;
+        px_midi_pl_put(cur_preset, 30, PXM_CC_TOGGLE0 + PX_B_MOD, PXM_MAP_EACH, PXM_CC_ON0 + PX_B_MOD, 0u, 100u);   /* (MOD's row: CC 30) */
+        const int row = px_midi_pl_count(cur_preset) == 2u && px_midi_pl_row(cur_preset, PXM_CC_TOGGLE0 + PX_B_EQ, 0xFFu) >= 0;
+        px_preset_t before = PRESET;
+        midi_enqueue(cc(0, 126, 127), 1); midi_enqueue(cc(0, 126, 0), 2); midi_enqueue(cc(0, 127, 127), 3); px_midi_service();
+        const int none = !memcmp(&before, &PRESET, sizeof before);
+        px_learn_arm(cur_preset, PXM_CC_TOGGLE0 + PX_B_DRIVE, PXM_CC_ON0 + PX_B_DRIVE, 0, 0u);
+        midi_enqueue(cc(0, 127, 127), 4); px_midi_service();
+        const int unheard = !mid_learn.got;
+        px_learn_cancel();
+        ok(two && row && none && unheard, "CC 126 / 127: the footswitches' own, two rows on one; a controller's dropped, not learned");
+        px_midi_pl_clear();
+    }
     {   /* CC 117 is the expression pedal (test build 25): every value goes to the engine, on any page, and the preset stays */
         reset();
         px_preset_t before = PRESET; exp_n = 0; exp_last = -1;

@@ -6,7 +6,7 @@ pedal's output**, with the guitar. Since test build 52 it is ettorebox's firmwar
 
 It is a test image, its own build target (`make bt`). The normal firmware and the installer's packages are unchanged.
 
-> **Status: test build 52, ettorebox beta 52** (below; build 50 runs on a pedal: the guided learn, the scenes and their names; build 38 is the one
+> **Status: test build 54, ettorebox beta 54** (below; build 50 runs on a pedal: the guided learn, the scenes and their names; build 38 is the one
 > played longest, about 2 hours of music). Test build 27 brought the web
 > editor over Bluetooth. Up to test build 14: builds 1 to 10 ran on a pedal: the
 > radio starts, a phone sees the pedal and links, but no phone
@@ -1645,6 +1645,99 @@ pages (README, "Install"); they also take the pedal back to M-VAVE's firmware.
    `ettorebox`.
 4. The Chocolate links as before.
 
+## Test build 53 (ettorebox beta 53): the preset's input on the GT page, a scene's tone
+
+Build 52 with what a gig asked for: GUITAR TONE "a game changer", wanted per guitar and per scene, and the INPUT level with it
+(-10 dB suits weak pickups, a passive piezo then sounds cold). The GT page is now the preset's input: after THRESH, RELEASE and
+PRESET LVL come **GTR TONE**, **PICKUP** and **INPUT**, each SETTINGS (the SETTINGS page's own row) or a value of this preset's.
+Each scene can have a tone of its own, set in the web editor's scenes grid (TONE). Which wins: the scene, the preset, SETTINGS.
+A change glides in 24 ms. A scene can also have an INPUT step over its patch's (a piezo's +9 dB). And the **input check**: on
+the INPUT rows (GT's and SETTINGS'), the pedal says LOW, GOOD or HOT against the level the amps and drives were voiced for, and
+which blocks of the preset the level changes; holding FX there sets it from 4 seconds of playing, for the patch, a scene or
+SETTINGS. The details: [MIDI.md](MIDI.md), "The preset's input on the GT page, and a scene's tone". Also: the installer and
+editor pages no longer zoom (pinch or double tap), as the RC-10R app.
+
+Then, after the first try on the pedal:
+
+- **The input check heard nothing** (`NOTHING HEARD`, no level on the INPUT CHECK page): the image never handed the check the
+  guitar's peak (`firmware/openpocket.c` had no `PX_IN_PEAK`, so `ui.h`'s stand-in for the simulators read 0). Now it does, and
+  `ui.h` refuses to build the Bluetooth image without it.
+- **SETTINGS' EQ**, one for every preset, for the room, the PA, the headphones: EQ BASS (a shelf at 100 Hz), EQ MID at EQ MID
+  FREQ (160 to 5000 Hz) as wide as EQ MID WIDTH, EQ TREBLE (a shelf at 3.5 kHz), -12 to +12 dB each, after PICKUP. It runs
+  over the guitar at the output, after the chain and before the volume (both sides in STEREO; the phone's music and GTR+BASS's
+  bass go around it). All at 0 dB it is off, the sound bit for bit as before. The main loop designs the filters
+  (`firmware/px_midi.h` `px_eq_coefs`) and hands them over as the knobs are; the output stage (`firmware/px_audio.h`
+  `a_eq_run`, RAM code) runs only the bands not at 0 dB. Kept in the store ("OPEQ", 12 bytes at 0x1EF0); the editor sets it
+  (`MAP`'s five EQ bytes, protocol 8).
+
+### What to check
+
+1. A preset as it was: the GT page shows SETTINGS in its last three rows, and the sound is as in beta 52.
+2. On the GT page, GTR TONE WARM, PICKUP HUMBUCK, INPUT +3 DB: heard at once, with no click; SAVE, another preset (SETTINGS'
+   sound), back: the preset's again.
+3. In the editor, a scene's TONE on NATURAL in a preset on MUDDY: recall the scene, the tone opens up; another scene, back to
+   MUDDY. No click either way.
+4. Hold FX on GTR TONE or PICKUP: `NOT FOR A CONTROLLER`, nothing learned.
+5. The input check: on GT's INPUT row play hard, the bottom line says LOW, GOOD or HOT; hold FX on INPUT, play 4 seconds,
+   PUSH: INPUT set. Again with a scene playing, the knob on THIS SCENE: its step. And SETTINGS' INPUT row the same way.
+6. MONO SYNTH after the input check on its preset (it aims 4 dB higher there: the tracker's gate is a fixed level).
+7. The input check now hears the guitar: on the INPUT CHECK page the level moves as you play, and the verdict comes.
+8. SETTINGS' EQ: EQ TREBLE +6 DB, then EQ BASS -6 DB: heard at once, in every preset, no click. EQ MID -9 DB at 400 HZ,
+   VERY NARROW, then VERY WIDE: a notch, then a scoop. Back to 0 DB everywhere: the sound as before. Leave SETTINGS, switch
+   off and on: the EQ is kept. The editor's two EQ rows show it and set it.
+
+## Test build 54 (ettorebox beta 54): the footswitches' three modes, LOW OCTAVE's top notes
+
+Beta 53 with two changes: the pedal's two footswitches do more, with no Chocolate, and LOW OCTAVE's top notes are steady.
+
+- **The footswitches' three modes.** **Both footswitches**, let go at once, turn them to their next mode, PLAY's next view:
+  **PRESETS** (CHAIN: the next and previous preset), **STOMP** (SWITCHES: what each one is learned on in this preset) and
+  **SCENES** (the next and previous scene), always the three in turn. The footer says which (`FOOTSW: STOMP`); one the
+  preset has nothing for (no footswitch learned, no scene yet) says `FOOTSW: STOMP (EMPTY)` in amber, and there the
+  footswitches step the presets (a SCENES with no scene makes none). **Held 0.7 s**, both open the tuner (before: pressed).
+  A footswitch is learned for STOMP as a controller's switch: on a block's ON row (hold FX, PUSH, press it) or on a scene
+  (SCENES' view, hold FX on its tile). One footswitch can have several blocks, switched together (all on if the first is
+  off, else all off); on a scene, a press goes there and the next back. Kept with the preset's learned controls as CC 126
+  (left) and 127 (right): no new store, no editor protocol change; a controller's CC 126 or 127 is dropped. The editor
+  shows them as "Left footswitch" and "Right footswitch". The details: [MANUAL.md](MANUAL.md), "The footswitches' three
+  modes".
+- **LOW OCTAVE's top notes.** On the pedal they "jumped in and out", as a MIDI glitch would: over a high note the tilt that
+  lets a chord's root lead raised the mains' hum above the note, and the octave's pitch followed the hum's (a 25 Hz rumble)
+  while its level followed the note. Now one note from C3 up takes its octave from the band's own arrow, where the hum stays
+  45 dB under it; chords and the low strings as before; and COMP no longer raises a note above RANGE into an octave. The
+  details and the numbers: [OWN-FX.md](OWN-FX.md), "The top notes".
+
+The room both take. The editor's command handler (`firmware/px_editor.h` `ed_handle`) is compiled for size in this image,
+as the pages' drawing is since beta 53. LOW OCTAVE's choice runs at sr / 8 in the RAM code (`lo_fast`, now compiled for
+size); PAD's `pad_flatten`, once per caught chord, went back to the flash; PAD's grain tables are sized by its 2 grains,
+which gives LOW OCTAVE's new state its 72 bytes (the delay ring as it was); the knob texts and the factory presets are
+compiled for size in this image only. Flash 4,176 bytes free (beta 53: 604), RAM code 296 (216), RAM 928 (928). The
+start-up screen says `BETA 54`. The release image is unchanged.
+
+### What to check
+
+1. A preset with nothing learned and no scene: press both and let go, three times: `FOOTSW: STOMP (EMPTY)` and
+   `FOOTSW: SCENES (EMPTY)` in amber, then `FOOTSW: PRESETS`; the preset as it was each time (the first footswitch's step
+   taken back), no scene made, not EDITED. In the two empty ones a footswitch steps the presets. Hold both: the tuner after
+   0.7 s; a footswitch or HOME leaves it.
+2. On DRV's page select ON, hold FX, PUSH, press the left footswitch: after about a second `LEARNED: FOOT L`, and the preset
+   did not change. The same on a second block (a chorus on MOD). The block page's header says `FOOT L`.
+3. Press both and let go: `FOOTSW: STOMP`, the two blocks in big tiles marked `FOOT L`. The left footswitch switches both
+   together, at once, no click; the right one (nothing learned) goes to the next preset.
+4. In a preset with scenes stored: both, let go, three times: STOMP, SCENES, PRESETS. In SCENES the footswitches step the
+   scenes; the blocks on the left footswitch stay as they are (SWITCH WINS).
+5. In SCENES' view hold FX on SCENE 2, press the right footswitch: `LEARNED: FOOT R`. In STOMP the right one goes to SCENE 2,
+   again back to the scene before.
+6. Hold FX on MODEL: the preset's MIDI table lists `FOOT L` and `FOOT R`. The editor's MIDI page, "Learned by the pedal, only
+   in" this preset: "Left footswitch", "Right footswitch".
+7. The web editor still reads, writes and saves presets as before (its command handler is now compiled for size).
+8. LOW OCTAVE as you play it (RANGE at D3, or LOWEST), DRY 100, OCT -1 50: single notes up the neck, from the 5th fret of the
+   D string to the 12th of the high E. Each note's octave steady through its decay: no jumping in and out, no rumble under it.
+9. The same with a single-coil pickup and the guitar's volume up (the hum was the trigger).
+10. Chords: an open G, an E5 power chord, an A minor barre: the root's octave as in beta 53.
+11. COMP 100 with RANGE at D3: notes above D3 stay without an octave.
+12. A D major triad at the 10th fret with LOWEST: does its octave sound wrong? (the one case that got worse on the computer)
+
 ## Checked on a computer
 
 - `tests/test_bt_ring.c`: a phone at 44.1 kHz with 15 ms of jitter, the pedal at its real 44,117.6 Hz, 60 s: no underrun, the rate
@@ -1704,6 +1797,29 @@ pages (README, "Install"); they also take the pedal back to M-VAVE's firmware.
     image calls three more library functions, all in members it already links (`att_server_notify`,
     `hci_le_get_acl_packet_num`, `stack_run_loop_resume`).
 - `tests/test_log.mjs`: the FIFO line and `W` named, and the nine lines classified and reported, as the log tool prints them.
+- Test build 53, the preset's input: `tests/uisim.c` `gt_input` (the GT page's six rows drawn above the footer, a factory preset
+  on SETTINGS in all three, GTR TONE and PICKUP one item a detent and stopping at their ends, one setting holding both, INPUT
+  in dB, every text within its box, NOT FOR A CONTROLLER, CC 36 and 37 none and 35 still PRESET LVL, a scene's tone over the
+  preset's with the preset's PICKUP and INPUT kept, the scene keeping its tone when it stores its blocks, SAVE keeping it;
+  the input check on played peaks: PLAY HARD, LOW +13, GOOD, HOT -9, CLIPS, the line within its box, the page's wait, 4 s of
+  listening, PUSH setting the patch's INPUT to its end, HOME and nothing heard leaving it, a scene's step chosen by the knob,
+  SAVE keeping it, SETTINGS' INPUT set and saved on leaving); `tests/test_store.c` (the scenes' INPUT steps' record: 12 bits
+  a preset none touching another, a power cycle, a factory reset, a failed CRC, a copy without it);
+  `tests/test_editor.mjs` (editor protocol 8: a scene's tone set, kept when its blocks are set, one past MUDDY refused, the
+  masks the blocks alone, the GT catalogue's names and texts, SET on GT's 4th and 5th, no controller learned there, SAVE
+  keeping the tone and INPUT); `tests/test_store.c` (the filter given the tone and the pickup). The release image is v42's byte
+  for byte (`d96b2adf`). Not covered: the glide by ear, and the sound of the tones on a real guitar: only the pedal can tell.
+- Test build 54, the footswitches' three modes: `tests/uisim.c` `feet_modes` (a preset with nothing learned: all three in
+  turn, the empty two in amber, stepping the presets there and making no scene, the first footswitch's step taken back; the
+  guided learn on ON taking the left footswitch, two rows for it, the preset kept; STOMP switching both blocks together and
+  back, the right one with nothing learned stepping the presets; the three modes in turn with scenes stored; a scene learned
+  on the right footswitch, gone to and back in STOMP; SWITCH WINS; both held 0.7 s: the tuner, the mode kept; the notes within
+  their boxes; the MIDI table's FOOT L and FOOT R; a setting's learn deaf to the footswitches); `tests/midiio.c` (a
+  controller's CC 126 and 127 dropped). LOW OCTAVE's top notes: `tests/engine/lowoct.c` (top notes over hum: at most 2
+  glitches in a note's first 12 dB, beta 53 10 to 27, and the octave within 10 ms of the note; COMP 100 at RANGE D3 keeping B3
+  and E4 15 dB under a low E's octave, beta 53 3 dB); `tests/engine/bassout.c` (its tolerance 0.2 dB, was 0.1: the limiter
+  meets the octave's new phase). The release image is v42's byte for byte (`d96b2adf`). Not covered: the octave on a real
+  guitar and the footswitches under the feet: only the pedal can tell.
 - Test build 41, the Chocolate by cable: `tests/test_usb_host.c` (felucca-bsp's descriptor parser on the Chocolate's layout as
   macOS reads it, configuration 1, HID at interface 0 with its interrupt endpoint, Audio Control at 1, MIDI streaming at 2,
   with bulk and interrupt endpoints and two numberings, a cut read, no MIDI interface, unusable sizes; the packets passed on,
@@ -1750,7 +1866,7 @@ pages (README, "Install"); they also take the pedal back to M-VAVE's firmware.
   12 bytes, and the power-on key's record); `tools/jlfold.py fold` on the library's IR (the same 149 constants folded and 86
   print helpers emptied as the probe in CI); v42's `tests/test_aorder.c` (the callbacks' order).
 - The image's own effects (tests/run_tests.sh, [OWN-FX.md](OWN-FX.md)): `tests/ownfx_equiv.sh`, every existing model with
-  `PX_OWN_FX` and without, 5,460 runs bit for bit; LOW OCTAVE (`tests/engine/lowoct.c`, 18 checks) and PAD
+  `PX_OWN_FX` and without, 5,460 runs bit for bit; LOW OCTAVE (`tests/engine/lowoct.c`, 21 checks) and PAD
   (`tests/engine/pad.c`, 15) as the image builds the engine and with the host's flags, also under ASan and UBSan, both
   giving v40's output bit for bit; the PAD's footswitch against v42's tuner (`tests/uisim.c` built with `PX_OWN_FX`, 16
   gestures, v42's 48 screens unchanged) and CC 64 (`tests/midiio.c`); without `PX_OWN_FX` the engine and `openpocket.c`

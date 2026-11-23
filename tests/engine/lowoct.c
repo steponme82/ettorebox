@@ -13,6 +13,8 @@
  *   - LOWEST: a G chord high on the neck (G3 B3 D4) gets the G's octave; an E5 the E's
  *   - plucked notes: the octave's attack comes less than 20 ms after the note's
  *   - COMP: a note 20 dB softer comes out less than 8 dB softer at COMP 100; hum at -80 dB is not raised above -70 dB
+ *   - beta 54: plucked top notes (D3 to D5) over a guitar's hum keep their own octave, without glitches while within 12 dB
+ *     of their peak, and it comes within 10 ms; COMP 100 does not raise a note above RANGE into an octave
  *   - a 30 Hz rumble mostly stays out of the octave; GROWL 0 changes nothing, GROWL up adds harmonics, not level
  *   - RANGE's text: LOWEST at 0, then the note at the crossover, D#2 at 1, G4 at 100; the other knobs in plain values:
  *     OCT -1 and DRY in dB against the note, GROWL its drive in dB, COMP its ratio, OFF at 0
@@ -241,6 +243,79 @@ int main(void)
         ok(ch == PX_CH_KNOBS && same && ca < 0.5f * cb, "knobs glide (v38): fewer clicks, they end where a full set does");
         p1 = p0; p1.p[PX_B_PITCH][0] = 70;
         ok(px_engine_change(&e2, &p1) == PX_CH_KNOBS, "RANGE is a knob too (no stop, no fade out)");
+    }
+
+    {   /* beta 54: the top notes over a guitar's hum. The tilt that lets a chord's root lead also raised the mains' hum over
+         * a high note: the octave's pitch jumped to the hum's (25 Hz) while its level followed the note. Plucked notes
+         * (8 harmonics, 15 cents of vibrato) over 50 Hz hum and its 100 and 150 Hz 45 dB under them, and noise: the
+         * octave's spacing (its upward zero crossings) is counted off by more than 20 % while the note is within 12 dB of
+         * its peak (beta 53: 10 to 27 of those a note, from D3 up) */
+        static const float F[7] = {146.83f, 196.0f, 246.94f, 329.63f, 392.0f, 440.0f, 587.33f};
+        static const int R[2] = {0, 100};
+        int worst = 0, wf = 0, wr = 0;
+        float lag = 0;
+        for (int r = 0; r < 2; r++)
+            for (int f = 0; f < 7; f++) {
+                if (R[r] == 100 && F[f] > 450.0f) continue;     /* (D5 is above RANGE at G4) */
+                const int t0 = (int)(0.15f * SR);
+                double ph = 0;
+                unsigned sd = 999u;
+                for (int k = 0; k < N; k++) {
+                    const float tt = (float)k / SR, h = 0.35f * 0.0056f;
+                    float s = h * (sinf(6.2831853f * 50.0f * tt) + 0.5f * sinf(6.2831853f * 150.0f * tt + 1.0f) +
+                                   0.3f * sinf(6.2831853f * 100.0f * tt));
+                    sd = sd * 1103515245u + 12345u;
+                    s += 0.35f * 1.8e-4f * ((float)((sd >> 9) & 0xFFFF) / 32768.0f - 1.0f);
+                    if (k >= t0) {
+                        const float u = (float)(k - t0) / SR;
+                        ph += 6.283185307 * F[f] * powf(2.0f, 15.0f / 1200.0f * sinf(6.2831853f * 5.0f * u)) / SR;
+                        float v = 0;
+                        for (int n = 1; n <= 8; n++) v += sinf((float)(ph * n) + 0.3f * n) / (float)n;
+                        s += 0.21f * (1.0f - expf(-u / 0.0015f)) * expf(-u * 2.0f) * v;
+                    }
+                    in[k] = s;
+                }
+                preset(&p, 1, R[r], 100, 0); run(&p, out);
+                const float P = 2.0f * SR / F[f], k2 = 1.0f - expf(-6.2831853f * 2000.0f / SR);
+                float lp = 0, prev = 0, last = -1;
+                int bad = 0;
+                for (int k = t0; k < t0 + (int)(0.69f * SR); k++) {
+                    lp += (out[k] - lp) * k2;
+                    if (prev <= 0.0f && lp > 0.0f) {
+                        const float c = (float)k - lp / (lp - prev + 1e-12f);
+                        if (last >= 0 && k >= t0 + (int)(0.04f * SR) && fabsf((c - last) / P - 1.0f) > 0.2f) bad++;
+                        last = c;
+                    }
+                    prev = lp;
+                }
+                if (bad > worst) { worst = bad; wf = f; wr = r; }
+                const float lg = t_half(out, t0, (int)(0.5f * SR)) - t_half(in, t0, (int)(0.5f * SR));
+                if (lg > lag) lag = lg;
+            }
+        printf("   top notes over hum: at most %d glitches in a note's first 12 dB (%.0f Hz, %s), the octave at most %.1f ms late\n",
+               worst, F[wf], wr ? "RANGE G4" : "LOWEST", lag);
+        ok(worst <= 2, "top notes over hum: the note's own octave, no glitches (beta 53: 10 to 27)");
+        ok(lag < 10.0f, "top notes over hum: the octave within 10 ms of the note");
+    }
+    {   /* beta 54: COMP raised a note above RANGE (its trace in the band, and the hum) into a full octave */
+        comp = 100;
+        float lv[3];
+        static const float F[3] = {82.41f, 246.94f, 329.63f};   /* a low E, then B3 and E4 above RANGE D3 */
+        for (int f = 0; f < 3; f++) {
+            memset(in, 0, sizeof in);
+            const int t0 = (int)(0.2f * SR);
+            for (int k = 0; k < (int)(0.9f * SR); k++) {
+                float tt = k / SR, env = expf(-tt * 3.0f), s = 0;
+                for (int h = 1; h <= 4; h++) s += sinf(6.2831853f * F[f] * h * tt) / (float)(h * h);
+                in[t0 + k] = 0.4f * env * s + 0.0019f * sinf(6.2831853f * 50.0f * (float)(t0 + k) / SR);
+            }
+            preset(&p, 1, RDEF, 100, 0); run(&p, out);
+            lv[f] = rms(out, (int)(0.25f * SR));
+        }
+        comp = 0;
+        const float d1 = 20.0f * log10f(lv[1] / lv[0]), d2 = 20.0f * log10f(lv[2] / lv[0]);
+        printf("   COMP 100, RANGE D3: B3 %.1f dB, E4 %.1f dB under a low E's octave\n", -d1, -d2);
+        ok(d1 < -15.0f && d2 < -15.0f, "COMP 100 does not raise a note above RANGE into an octave (-15 dB; beta 53: -3)");
     }
 
     px_param_text(PX_B_PITCH, PX_PIT_LOWOCT, 0, 0, t);

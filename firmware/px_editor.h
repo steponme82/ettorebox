@@ -23,7 +23,8 @@
 #define ED_H1 0x4Fu
 #define ED_H2 0x50u
 #if PX_OWN_FX
-#define ED_PROTO 7u                             /* 7: test build 51, a two-job pedal (PL's mode bit 6) and VOL PEDAL (MAP's
+#define ED_PROTO 8u                             /* 8: test build 53, a scene's tone (SCENE: 5, n, tone; the four after the
+                                                 * names); 7: test build 51, a two-job pedal (PL's mode bit 6) and VOL PEDAL (MAP's
                                                  * last byte, bit 4); 6: PL, SCENE and MAP's two settings bytes (test builds
                                                  * 46 to 49); 5: the Bluetooth audio image's test build 39, WATCH's MIDI bit,
                                                  * MIDI_IN, MAP */
@@ -41,6 +42,12 @@
 #define ED_STATS 6u                             /* PING's figures after the flags (ed_stat): the Bluetooth test image has 8 */
 #endif
 typedef char ed_size_check[sizeof(px_preset_t) == ED_P_SIZE ? 1 : -1];
+#ifndef PX_OWN_FX
+#define PX_OWN_FX 0
+#endif
+#if !PX_OWN_FX
+#define ED_PARAM_TEXT(b, t, k, v, s) px_param_text(b, t, k, v, s)   /* (test build 53: the Bluetooth audio image's own, below) */
+#endif
 enum { ED_INFO = 1, ED_CAT_BLOCK, ED_CAT_TYPE, ED_TEXTS, ED_STATE, ED_SET, ED_ORDER, ED_NAME, ED_PUT, ED_SELECT,
        ED_FOCUS, ED_LIST, ED_SLOT_GET, ED_SLOT_PUT, ED_COMMIT, ED_SAVE, ED_WATCH, ED_PING,
        ED_NAM_LIST, ED_NAM_WRITE, ED_NAM_COMMIT, ED_NAM_ERASE, ED_DIAG,
@@ -166,10 +173,28 @@ static uint32_t ed_state_hash(void)
 /* protocol 6: MAP's settings bytes as no build writes them (GUITAR TONE past BRIGHT, PICKUP past P90, PLAY VIEW past SCENES, a
  * bit no build sets), and a preset's scenes as SCENE sends them (the scene playing, the ones stored, the four masks in 2 bytes) */
 static int ed_more_bad(uint32_t t, uint32_t v) { return (t & 15u) >= PX_INZ_N || ((t >> 4) & 3u) > 2u || t > 0x3Fu || (v & 3u) > 2u || v > 31u; }
+/* test build 53: the GT page's GTR TONE + PICKUP (setting 4: the tone's name, "SETTINGS" at 0; the web editor splits the two) and
+ * INPUT (setting 5: "SETTINGS", "-10 DB" .. "+10 DB"), the rest as the engine says */
+static __attribute__((noinline)) int ed_param_text(uint32_t b, uint32_t t, uint32_t k, uint32_t v, char *s)
+{
+    if (b == PX_B_GATE && (k == PX_GT_TONE || k == PX_GT_INPUT)) {
+        const uint32_t i = k == PX_GT_TONE ? px_gt_tone(v) : px_gt_input(v);
+        s[0] = 0;
+        if (!i) { b_str(s, "SETTINGS"); return 1; }
+        if (k == PX_GT_TONE) { b_str(s, PX_INZ_NAME[PX_INZ_ORDER[i - 1u]]); return 1; }
+        const int db = (int)i - 1 + PX_IN_DB_MIN;
+        if (db > 0) b_str(s, "+"); else if (db < 0) b_str(s, "-");
+        b_num(s, (uint32_t)(db < 0 ? -db : db)); b_str(s, " DB");
+        return 1;
+    }
+    return px_param_text((int)b, (int)t, (int)k, (int)v, s);
+}
+#define ED_PARAM_TEXT(b, t, k, v, s) ed_param_text(b, t, k, v, s)
 static void ed_sc(const px_sc_t *c)
 {
     ed_b(c->cur); ed_b(c->set);
-    for (uint32_t i = 0; i < PX_SC_N; i++) { ed_b(c->mask[i]); ed_b((uint32_t)c->mask[i] >> 7); }
+    for (uint32_t i = 0; i < PX_SC_N; i++) { ed_b(c->mask[i] & PX_SC_BLOCKS); ed_b((c->mask[i] & PX_SC_BLOCKS) >> 7); }   /* (53: the
+                                                     * blocks alone: the tones follow the names) */
 }
 /* test build 50: the scenes' names (px_midi.h px_scn), PX_SCN_LEN characters each, 0 after the end; one as SCENE takes it: ASCII
  * 32..126 up to its first 0, nothing after it */
@@ -200,7 +225,12 @@ static void ed_ui_fix(void)                       /* the block page after a type
     if (ui_item >= 2u + (uint32_t)px_nparams((int)ui_blk, PRESET.type[ui_blk])) ui_item = 0;
 }
 
-static void ed_handle(const uint8_t *a, uint32_t n)   /* a: the args, after the command byte */
+#ifndef UI_SMALL
+#define UI_SMALL
+#endif
+/* ettorebox beta 54: compiled for size in the Bluetooth audio image (ui.h UI_SMALL, as the pages' drawing): a command now and
+ * then from the editor, never on the sound's path; the release as it was */
+static UI_SMALL void ed_handle(const uint8_t *a, uint32_t n)   /* a: the args, after the command byte */
 {
     uint32_t cmd = a[-1], i, k;
     int rc;
@@ -214,8 +244,9 @@ static void ed_handle(const uint8_t *a, uint32_t n)   /* a: the args, after the 
                  * kept build 38's "v42 FX" catalogue reads it again. "v42 FX3" since test build 44 (TAPE FLUTE); "v42 FX4" since
                  * test build 45 (SFX's WAH, WHAMMY's PEDAL); "v42 FX5" since test build 47 (12-STRING's DETUNE in cents to 3.0);
                  * "v42 FX6" since test build 48 (PRESET LVL down to -INF); "v42 FX7" since test build 51 (a two-job pedal: PL's
-                 * mode bit 6, px_midi.h PXM_PL_DUAL; MAP's last byte bit 4, VOL PEDAL) */
-        ed_b(ED_PROTO); ed_str(OP_VERSION " FX7", 15); ed_str(FELUCCA_ID_PTR, 27);
+                 * mode bit 6, px_midi.h PXM_PL_DUAL; MAP's last byte bit 4, VOL PEDAL); "v42 FX8" since test build 53 (the GT
+                 * page's GTR TONE + PICKUP and INPUT, engine/px_dsp.c PN_GATE) */
+        ed_b(ED_PROTO); ed_str(OP_VERSION " FX8", 15); ed_str(FELUCCA_ID_PTR, 27);
 #else
         ed_b(ED_PROTO); ed_str(OP_VERSION, 15); ed_str(FELUCCA_ID_PTR, 27);
 #endif
@@ -233,7 +264,7 @@ static void ed_handle(const uint8_t *a, uint32_t n)   /* a: the args, after the 
         char t[12];
         for (k = 0; k < (uint32_t)np; k++)
             for (i = 0; i <= 100u && !(mask >> k & 1u); i++)
-                if (px_param_text(a[0], a[1], (int)k, (int)i, t)) mask |= 1u << k;
+                if (ED_PARAM_TEXT(a[0], a[1], (int)k, (int)i, t)) mask |= 1u << k;
         ed_b(a[0]); ed_b(a[1]); ed_str(px_type_name(a[0], a[1]), 31); ed_b((uint32_t)np); ed_b(mask);
         for (k = 0; k < (uint32_t)np; k++) ed_str(px_param_name(a[0], a[1], (int)k), 15);
         break;
@@ -244,7 +275,7 @@ static void ed_handle(const uint8_t *a, uint32_t n)   /* a: the args, after the 
         ed_b(a[0]); ed_b(a[1]); ed_b(a[2]);
         for (i = 0; i <= 100u; i++) {
             t[8] = 0;
-            ed_str(px_param_text(a[0], a[1], a[2], (int)i, t) ? t : "", 8);
+            ed_str(ED_PARAM_TEXT(a[0], a[1], a[2], (int)i, t) ? t : "", 8);
         }
         break;
     }
@@ -338,6 +369,7 @@ static void ed_handle(const uint8_t *a, uint32_t n)   /* a: the args, after the 
 #if PX_OWN_FX
         if (a[0] != cur_preset) (void)px_midi_pl_copy(cur_preset, a[0]);   /* (test build 46: its learned controls go with it) */
         sc_fold(); px_sc_tab[a[0]] = px_sc;            /* (test build 49: and its scenes) */
+        px_si_put(a[0], px_si);                        /* (test build 53: and their INPUT steps) */
 #endif
         rc = st_save(a[0], &PRESET) ? 2 : 0;
         if (!rc) cur_preset = a[0];
@@ -447,6 +479,8 @@ static void ed_handle(const uint8_t *a, uint32_t n)   /* a: the args, after the 
             if (!rc && n > want && !px_ua_route_valid(a[want])) rc = 1;
 #endif
             if (!rc && n > want + 2u && ed_more_bad(a[want + 1u], a[want + 2u])) rc = 1;   /* (protocol 6) */
+            if (!rc && n >= want + 3u + PX_EQ_N)       /* (ettorebox beta 53, protocol 8: then SETTINGS' EQ, each from 0) */
+                for (k = 0; k < PX_EQ_N; k++) if ((int)a[want + 3u + k] > PX_EQ_MAX[k] - px_eq_min(k)) rc = 1;
             for (k = 0; !rc && k < PXM_MAP_N; k++) {
                 const uint8_t *e = a + 4u + k * 4u;
                 mq[k].src = e[0] ? e[1] : 0xFFu; mq[k].dst = e[2]; mq[k].mode = e[3];
@@ -478,6 +512,8 @@ static void ed_handle(const uint8_t *a, uint32_t n)   /* a: the args, after the 
                     px_vol_at = (uint8_t)((a[want + 2u] >> 4) & 1u);   /* (protocol 7, test build 51: VOL PEDAL, heard at once) */
                     PX_EXP_PLACE(px_vol_at);
                 }
+                if (n >= want + 3u + PX_EQ_N)          /* (protocol 8: the EQ, heard at once, px_audio.h a_eq_sync) */
+                    for (k = 0; k < PX_EQ_N; k++) (void)px_eq_set(k, (int)a[want + 3u + k] + px_eq_min(k));
                 st_midi = px_midi_cfg_pack(&mid_cfg);
                 if (st_commit()) rc = 2;               /* (it stays in RAM and works: the next save writes it) */
                 st_gen++;
@@ -498,6 +534,7 @@ static void ed_handle(const uint8_t *a, uint32_t n)   /* a: the args, after the 
 #endif
         ed_b(px_inz_pack()); ed_b(px_live | (uint32_t)px_sc_rule << 2 | (uint32_t)px_sc_feet << 3 |
                                   (uint32_t)px_vol_at << 4);   /* (protocol 6; 7, test build 51: bit 4 VOL PEDAL) */
+        for (k = 0; k < PX_EQ_N; k++) ed_b((uint32_t)(px_eq[k] - px_eq_min(k)));   /* (ettorebox beta 53, protocol 8: the EQ) */
         break;
     }
     case ED_PL: {                                      /* protocol 6: a preset's own controls (px_midi.h mid_pl): slot (read);
@@ -525,16 +562,25 @@ static void ed_handle(const uint8_t *a, uint32_t n)   /* a: the args, after the 
     case ED_SCENE:                                     /* protocol 6: the playing preset's scenes (px_midi.h px_sc): nothing
                                                         * (read); 1, n (recall, as CC 65 + n); 2, n, mask (2 bytes: scene n's
                                                         * blocks; the scene playing switches them); 3, n (forget); test build 50:
-                                                        * 4, n, c0, c1, c2 (scene n's name, 0-padded). SAVE keeps them */
+                                                        * 4, n, c0, c1, c2 (scene n's name, 0-padded); test build 53: 5, n, tone
+                                                        * (scene n's GUITAR TONE, 0 the preset's, 1..9; a scene not stored is
+                                                        * stored as things are), 6, n, step (scene n's INPUT step over the patch:
+                                                        * 0 none, 1..7 -6, -3, +3, +6, +9, +12, +15 dB). SAVE keeps them */
         rc = 0;
         if (n) {
             const uint32_t sn = n >= 2u ? a[1] : PX_SC_N;
             if (sn >= PX_SC_N) rc = 1;
             else if (a[0] == 1u) ui_scene_recall(sn);
             else if (a[0] == 2u && n >= 4u && a[3] < 32u) {
-                px_sc.mask[sn] = (uint16_t)(a[2] | (uint32_t)a[3] << 7); px_sc.set |= (uint8_t)(1u << sn);
+                const uint32_t tn = (px_sc.set >> sn & 1u) ? px_sc.mask[sn] & ~PX_SC_BLOCKS : 0u;   /* (53: its tone kept) */
+                px_sc.mask[sn] = (uint16_t)(tn | a[2] | (uint32_t)a[3] << 7); px_sc.set |= (uint8_t)(1u << sn);
                 if (sn == px_sc.cur) for (k = 0; k < PX_NBLK; k++) PRESET.on[k] = (uint8_t)(px_sc.mask[sn] >> k & 1u);
             } else if (a[0] == 3u) px_sc.set &= (uint8_t)~(1u << sn);
+            else if ((a[0] == 5u && n >= 3u && a[2] <= PX_INZ_N) || (a[0] == 6u && n >= 3u && a[2] < 8u)) {   /* (test build 53) */
+                if (!(px_sc.set >> sn & 1u)) { px_sc.mask[sn] = (uint16_t)sc_now(); px_sc.set |= (uint8_t)(1u << sn); }
+                if (a[0] == 5u) px_sc.mask[sn] = (uint16_t)((px_sc.mask[sn] & PX_SC_BLOCKS) | (uint32_t)a[2] << PX_SC_TONE_SH);
+                else px_si = (uint16_t)px_si_with(px_si, sn, a[2]);
+            }
             else if (a[0] == 4u && n >= 2u + PX_SCN_LEN && ed_scn_ok(a + 2)) memcpy(px_scn[sn], a + 2, PX_SCN_LEN);   /* (a change
                                                                                                      * until SAVE: ui_dirty) */
             else rc = 1;
@@ -542,6 +588,10 @@ static void ed_handle(const uint8_t *a, uint32_t n)   /* a: the args, after the 
         ed_b((uint32_t)rc); ed_sc(&px_sc); ed_sc(&px_sc_tab[cur_preset < 52u ? cur_preset : 0u]);
         ed_scn(px_scn); ed_scn(px_scn_saved);          /* (test build 50: the names as they play and as saved, after what 49 sent,
                                                         * so its editor reads on) */
+        for (k = 0; k < PX_SC_N; k++) ed_b(px_sc_tone(px_sc.mask[k]));   /* (test build 53: the tones, as they play and as saved) */
+        for (k = 0; k < PX_SC_N; k++) ed_b(px_sc_tone(px_sc_tab[cur_preset < 52u ? cur_preset : 0u].mask[k]));
+        for (k = 0; k < PX_SC_N; k++) ed_b(px_si_step(px_si, k));   /* (the INPUT steps, as they play and as saved) */
+        for (k = 0; k < PX_SC_N; k++) ed_b(px_si_step(px_si_get(cur_preset), k));
         break;
 #endif
 #ifdef ED_DIAG_LINES

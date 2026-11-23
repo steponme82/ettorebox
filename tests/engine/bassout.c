@@ -159,7 +159,10 @@ int main(int argc, char **argv)
     ok(!memcmp(o_l, o_off, sizeof o_l), "px_engine_bass_out: the left channel is the guitar alone, bit for bit (the octave off)");
     const float r41 = amp_at(o_r, 41.2f, pa, pb);
     snprintf(what, sizeof what, "the right channel is the octave alone: 41.2 Hz %.1f dB (added to the mix: %.1f dB), 82.4 Hz %.1f dB", db(r41), db(x41), db(amp_at(o_r, 82.41f, pa, pb)));
-    ok(fabsf(db(r41) - db(x41)) < 0.1f && amp_at(o_r, 82.41f, pa, pb) < 0.05f * r41 && peak(o_r, ta, N) < 1e-4f, what);
+    /* (the mix's limiter acts on the guitar and the octave together, so the octave added to the mix comes out a little under
+     * the octave alone, by how their peaks meet: 0.09 dB in beta 53, 0.13 dB in beta 54, whose octave starts from the band's
+     * arrow and keeps that turn against the note) */
+    ok(fabsf(db(r41) - db(x41)) < 0.2f && amp_at(o_r, 82.41f, pa, pb) < 0.05f * r41 && peak(o_r, ta, N) < 1e-4f, what);
     { px_preset_t z = q; z.on[PX_B_PITCH] = 0; run(&z, o_l, o_r); }
     ok(peak(o_r, 0, N) == 0.0f, "no LOW OCTAVE on: the right channel is silent");
 

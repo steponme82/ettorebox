@@ -32,6 +32,26 @@ mode, so that it carries on small speakers and a PA without subwoofers; at 0 the
 octave's level, as a compressor in front of an octaver: at 100 a note 20 dB softer gets an octave only 2 dB softer, and the
 hum between notes is not raised.
 
+**The top notes (ettorebox beta 54).** The octave's pitch comes from a copy of the band tilted towards the bass (four
+one-pole low-passes at 60 Hz, six with LOWEST), so that of a chord's notes the lowest leads. Over a high note that tilt also
+raised the mains' hum, rumble and noise 30 to 100 dB: on beta 53 the octave's pitch jumped to the hum's (a 25 Hz rumble)
+while its level still followed the note, and the top notes "jumped in and out". With hum 45 dB under the playing (a single
+coil's), LOWEST lost the note from D3 up and RANGE at G4 from G3 up; with no hum at all LOWEST lost it from G4 up. Since
+beta 54 (`engine/px_dsp.c` `lo_fast`) one note from C3 up halves the band's own arrow, where the hum stays 45 dB under the
+note. The band holds one note while its arrow turns steadily (a note's harmonics keep step with it, a chord's notes beat),
+checked afresh from each pluck, so the octave is right from the note's start. Chords and the low strings (E2 to B2) keep
+the tilted arrow, as before, and so does a bright pickup's low note whose band arrow rides its 2nd harmonic; where hum or
+noise leads the tilted arrow (its note holds under a hundredth of the band), the band's arrow instead. A change of arrow
+turns the new one onto the old, so the octave never jumps. And COMP no longer raises a note above RANGE into an octave: it
+is shut while the band holds under 8 % of the guitar's level.
+
+Measured on plucked notes over that hum (`tests/engine/lowoct.c`): from D3 to D5, with LOWEST and with RANGE at G4, at most
+2 glitches while a note is within 12 dB of its peak (beta 53: 10 to 27), and the octave within 7 ms of the note (beta 53:
+14.6); with COMP 100 at RANGE D3, B3 and E4 come 20 dB under a low E's octave (beta 53: 3 to 5). Chords give their root's
+octave as before (an open G, an E5, an A minor barre, a soft bass under C/G), but one: a high triad (D major at the 10th
+fret) with no hum gets it less often (LOWEST: 25 % of the octave on the root, beta 53 65 %; RANGE at G4: 56 %, 70 %). Its
+three notes make one steady wave, taken for one note. With hum, beta 53 lost that chord as well.
+
 **The bass skips the rest of the chain (test build 42).** A bass player's sound goes to the desk clean, never through the
 guitarist's reverb or delay. So the octave no longer goes on down the chain with the guitar: it leaves at the PIT block, the
 guitar (DRY) goes on alone through the drive, the amp, the cabinet, EQ, MOD, DELAY and REVERB, and the octave joins at the

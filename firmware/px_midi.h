@@ -103,11 +103,12 @@ static void px_inz_step(int dd)                        /* GUITAR TONE's knob, al
 static const float PX_PU_L[3] = {2.6f, 4.5f, 6.5f}, PX_PU_R[3] = {6000.0f, 9000.0f, 8000.0f}, PX_PU_C[3] = {650e-12f, 750e-12f, 700e-12f};
 static const float PX_INZ_RL[PX_INZ_N] = {1e6f, 230e3f, 136e3f, 90e3f, 70e3f, 32e3f, 22e3f, 10e3f, 1e6f};
 static const float PX_INZ_CK[PX_INZ_N] = {1, 1, 1, 1, 1, 1, 1, 1, 0.4f};   /* (the capacitance left: BRIGHT's buffer) */
-static int px_inz_coefs(float sr, float *c)
+static int px_inz_coefs(float sr, uint32_t inz, uint32_t pickup, float *c)   /* (test build 53: the tone and the pickup given:
+                                                                                * the preset's or a scene's, px_in_eff) */
 {
-    if (!px_inz || px_inz >= PX_INZ_N || px_pickup > 2u) return 0;
-    const float L = PX_PU_L[px_pickup], R = PX_PU_R[px_pickup], C = PX_PU_C[px_pickup], RL = PX_INZ_RL[px_inz];
-    const float Ct = C * PX_INZ_CK[px_inz];
+    if (!inz || inz >= PX_INZ_N || pickup > 2u) return 0;
+    const float L = PX_PU_L[pickup], R = PX_PU_R[pickup], C = PX_PU_C[pickup], RL = PX_INZ_RL[inz];
+    const float Ct = C * PX_INZ_CK[inz];
     const float n2 = L * C, n1 = R * C + L / 1e6f, n0 = 1.0f + R / 1e6f;   /* (the input as it is: 1 MOhm) */
     const float d2 = L * Ct, d1 = R * Ct + L / RL, d0 = 1.0f + R / RL;
     /* (prewarped at the pickup's resonance. Test build 47: BRIGHT's own, higher, for the half it moves: the two halves of the
@@ -118,6 +119,58 @@ static int px_inz_coefs(float sr, float *c)
     c[0] = (n2 * Kn2 + n1 * Kn + n0) * g; c[1] = 2.0f * (n0 - n2 * Kn2) * g; c[2] = (n2 * Kn2 - n1 * Kn + n0) * g;
     c[3] = 2.0f * (d0 - d2 * Kd2) * ga; c[4] = (d2 * Kd2 - d1 * Kd + d0) * ga;
     return 1;
+}
+/* ettorebox beta 53: SETTINGS' EQ, one for every preset, to suit the room, the speaker, the headphones: BASS (a shelf at 100 Hz),
+ * MID (a peak at MID FREQ, MID WIDTH wide), TREBLE (a shelf at 3.5 kHz), -12..+12 dB each. px_audio.h runs it over the whole
+ * guitar at the output, after the chain and before the volume; the phone's music goes around it, and so does GTR+BASS's bass.
+ * All three at 0 dB: off, the sound bit for bit as without it. px_eq: BASS, MID (dB), MID FREQ (PX_EQ_HZ's), MID WIDTH
+ * (PX_EQ_QV's), TREBLE (dB); the store keeps them (px_store.h "OPEQ"), the editor sets them (px_editor.h MAP) */
+enum { PX_EQ_BASS, PX_EQ_MID, PX_EQ_FREQ, PX_EQ_WIDTH, PX_EQ_TREB, PX_EQ_N };
+static const int8_t PX_EQ_FLAT[PX_EQ_N] = {0, 0, 7, 2, 0};   /* (flat; the mid at 800 Hz, MEDIUM) */
+static int8_t px_eq[PX_EQ_N] = {0, 0, 7, 2, 0};
+static const int8_t PX_EQ_MAX[PX_EQ_N] = {12, 12, 15, 4, 12};
+static const uint16_t PX_EQ_HZ[16] = {160, 200, 250, 315, 400, 500, 630, 800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000};
+static const float PX_EQ_QV[5] = {0.5f, 0.8f, 1.2f, 2.0f, 3.5f};
+static const char *const PX_EQ_WNAME[5] = {"VERY WIDE", "WIDE", "MEDIUM", "NARROW", "VERY NARROW"};
+static int px_eq_min(uint32_t k) { return k == PX_EQ_FREQ || k == PX_EQ_WIDTH ? 0 : -12; }
+static void px_eq_step(uint32_t k, int dd)            /* (SETTINGS' knob: a step, no further than either end) */
+{
+    int v = px_eq[k] + (dd > 0 ? 1 : -1);
+    if (v < px_eq_min(k)) v = px_eq_min(k);
+    if (v > PX_EQ_MAX[k]) v = PX_EQ_MAX[k];
+    px_eq[k] = (int8_t)v;
+}
+static int px_eq_set(uint32_t k, int v)               /* (the store's and the editor's: 0, and nothing set, out of range) */
+{
+    if (k >= PX_EQ_N || v < px_eq_min(k) || v > PX_EQ_MAX[k]) return 0;
+    px_eq[k] = (int8_t)v;
+    return 1;
+}
+static uint32_t px_eq_pack(void)                      /* (the five as one word: a change seen) */
+{
+    return (uint32_t)(px_eq[0] + 12) | (uint32_t)(px_eq[1] + 12) << 5 | (uint32_t)px_eq[2] << 10 | (uint32_t)px_eq[3] << 14 |
+           (uint32_t)(px_eq[4] + 12) << 17;
+}
+/* one biquad, the cookbook's (RBJ, as engine/px_dsp.c's): kind 0 a low shelf, 1 a peak, 2 a high shelf; c = b0 b1 b2 a1 a2 */
+static __attribute__((noinline)) void px_eq_bq(float *c, float sr, uint32_t kind, float f, float q, float db)
+{
+    const float A = powf(10.0f, db * 0.025f), w = 6.2831853f * f / sr, cw = cosf(w), al = sinf(w) / (2.0f * q);
+    float b0, b1, b2, a0, a1, a2;
+    if (kind == 1u) { b0 = 1.0f + al * A; b2 = 1.0f - al * A; a0 = 1.0f + al / A; a2 = 1.0f - al / A; b1 = a1 = -2.0f * cw; }
+    else {                                             /* (the two shelves: one form, the high one's A - 1 turned round) */
+        const float ap = A + 1.0f, am = kind ? 1.0f - A : A - 1.0f, t = 2.0f * sqrtf(A) * al;
+        b0 = A * (ap - am * cw + t); b1 = 2.0f * A * (am - ap * cw); b2 = A * (ap - am * cw - t);
+        a0 = ap + am * cw + t; a1 = -2.0f * (am + ap * cw); a2 = ap + am * cw - t;
+    }
+    c[0] = b0 / a0; c[1] = b1 / a0; c[2] = b2 / a0; c[3] = a1 / a0; c[4] = a2 / a0;
+}
+/* the three filters at sample rate sr into c (b0 b1 b2 a1 a2 each: BASS, MID, TREBLE); the bands not at 0 dB, a bit each (0: off) */
+static uint32_t px_eq_coefs(float sr, float *c)
+{
+    px_eq_bq(c, sr, 0u, 100.0f, 0.70710678f, (float)px_eq[PX_EQ_BASS]);
+    px_eq_bq(c + 5, sr, 1u, (float)PX_EQ_HZ[px_eq[PX_EQ_FREQ] & 15], PX_EQ_QV[px_eq[PX_EQ_WIDTH] % 5], (float)px_eq[PX_EQ_MID]);
+    px_eq_bq(c + 10, sr, 2u, 3500.0f, 0.70710678f, (float)px_eq[PX_EQ_TREB]);
+    return (px_eq[PX_EQ_BASS] ? 1u : 0u) | (px_eq[PX_EQ_MID] ? 2u : 0u) | (px_eq[PX_EQ_TREB] ? 4u : 0u);
 }
 static uint8_t px_set_pack(void)
 {
@@ -168,6 +221,70 @@ typedef struct { uint16_t mask[PX_SC_N]; uint8_t cur, set; } px_sc_t;   /* set: 
 static px_sc_t px_sc_tab[52];                          /* every preset's, as saved (52: px_store.h ST_NSLOT, PXM_PL_SLOTS) */
 static px_sc_t px_sc;                                  /* the playing preset's, as it plays */
 static uint8_t px_sc_rule, px_sc_feet;                 /* (SETTINGS: 1 SCENE WINS; 1 the footswitches stay on the presets) */
+/* test build 53: a scene's own GUITAR TONE, in the 4 bits of its mask past the blocks (12..15: older builds never read them, and
+ * drop them where they store a scene again): 0 the preset's, 1..9 a tone in the knob's order (PX_INZ_ORDER). SAVE keeps them
+ * with the scenes ("OPSC", as it was) */
+#define PX_SC_BLOCKS 0x0FFFu
+#define PX_SC_TONE_SH 12u
+static uint32_t px_sc_tone(uint32_t m) { const uint32_t t = (m & 0xFFFFu) >> PX_SC_TONE_SH; return t <= PX_INZ_N ? t : 0u; }
+static uint32_t px_scene_tone(void)                    /* the scene playing's own tone, 0: none (the preset's) */
+{
+    return (px_sc.set >> (px_sc.cur & 3u) & 1u) ? px_sc_tone(px_sc.mask[px_sc.cur & 3u]) : 0u;
+}
+/* test build 53: a scene's INPUT step over its patch's INPUT: 0 as the patch, 1..7 -6, -3, +3, +6, +9, +12, +15 dB (a hybrid
+ * guitar's piezo scene, +9 over its magnetic pickup's). Every preset's as saved, packed 3 bits a scene, preset i's 12 bits at bit
+ * 12 x i (px_store.h "OPSI"); the playing preset's as it plays, px_si (ui.h ui_dirty: EDITED; SAVE writes it) */
+#define PX_SI_BYTES ((52u * PX_SC_N * 3u + 7u) / 8u)   /* 78 */
+static uint8_t px_si_tab[PX_SI_BYTES];
+static uint16_t px_si;
+static const int8_t PX_SI_DB[8] = {0, -6, -3, 3, 6, 9, 12, 15};
+static __attribute__((noinline)) uint32_t px_si_get(uint32_t slot)              /* a preset's four, as saved */
+{
+    if (slot >= 52u) return 0;
+    const uint32_t b = slot * 12u, i = b >> 3;
+    return ((uint32_t)px_si_tab[i] | (uint32_t)px_si_tab[i + 1u] << 8) >> (b & 7u) & 0xFFFu;
+}
+static __attribute__((noinline)) void px_si_put(uint32_t slot, uint32_t v)
+{
+    if (slot >= 52u) return;
+    const uint32_t b = slot * 12u, i = b >> 3, sh = b & 7u;
+    uint32_t w = (uint32_t)px_si_tab[i] | (uint32_t)px_si_tab[i + 1u] << 8;
+    w = (w & ~(0xFFFu << sh)) | (v & 0xFFFu) << sh;
+    px_si_tab[i] = (uint8_t)w; px_si_tab[i + 1u] = (uint8_t)(w >> 8);
+}
+static uint32_t px_si_step(uint32_t v, uint32_t n) { return v >> (3u * (n & 3u)) & 7u; }
+static uint32_t px_si_with(uint32_t v, uint32_t n, uint32_t st) { return (v & ~(7u << (3u * (n & 3u)))) | (st & 7u) << (3u * (n & 3u)); }
+static int px_scene_in_db(void)                       /* the scene playing's INPUT step in dB, 0: none */
+{
+    return (px_sc.set >> (px_sc.cur & 3u) & 1u) ? PX_SI_DB[px_si_step(px_si, px_sc.cur)] : 0;
+}
+/* test build 53: the input the pedal plays with (px_audio.h a_in_sync): the GT page's GTR TONE, PICKUP and INPUT (engine/px_dsp.c
+ * PN_GATE: setting 4 holds the tone + 10 x the pickup, setting 5 INPUT; 0 in each: SETTINGS' own), a scene's tone over the
+ * preset's, SETTINGS' rows where the preset has none */
+#define PX_GT_TONE 3u
+#define PX_GT_INPUT 4u
+#define PX_GT_NTONE (PX_INZ_N + 1u)                    /* SETTINGS, then the 9 tones in the knob's order */
+#define PX_GT_NPICK 4u                                 /* SETTINGS, SINGLE, HUMBUCK, P90 */
+#define PX_GT_NIN ((uint32_t)(PX_IN_DB_MAX - PX_IN_DB_MIN + 2))   /* SETTINGS, then -10..+10 dB */
+static uint32_t px_gt_tone(uint32_t v) { return v % 10u; }
+static uint32_t px_gt_pickup(uint32_t v) { v /= 10u; return v < PX_GT_NPICK ? v : PX_GT_NPICK - 1u; }
+static uint32_t px_gt_input(uint32_t v) { return v < PX_GT_NIN ? v : PX_GT_NIN - 1u; }
+typedef struct { uint8_t inz, pickup; int8_t db; } px_in_t;
+#define PX_IN_DB_LO (-16)                              /* (INPUT with a scene's step: -10 - 6 .. +10 + 15) */
+#define PX_IN_DB_HI 25
+static __attribute__((noinline)) px_in_t px_in_eff(const px_preset_t *p, uint32_t scene_tone, int scene_db)
+{
+    const uint32_t k3 = p->p[PX_B_GATE][PX_GT_TONE], t = scene_tone ? scene_tone : px_gt_tone(k3), u = px_gt_pickup(k3);
+    const uint32_t i = px_gt_input(p->p[PX_B_GATE][PX_GT_INPUT]);
+    px_in_t r;
+    r.inz = t ? PX_INZ_ORDER[t - 1u] : px_inz;
+    r.pickup = (uint8_t)(u ? u - 1u : px_pickup);
+    {
+        const int db = (i ? (int)i - 1 + PX_IN_DB_MIN : px_in_db) + scene_db;
+        r.db = (int8_t)(db < PX_IN_DB_LO ? PX_IN_DB_LO : db > PX_IN_DB_HI ? PX_IN_DB_HI : db);
+    }
+    return r;
+}
 /* test build 51: SETTINGS' VOL PEDAL, where the expression pedal's volume acts, in every preset (engine px_exp_place): 0 right
  * after the input (the default: as the guitar's own volume knob, the drive cleans up with it), 1 before the delay and the
  * reverb (the tone kept). The tails ring on in both. Bit 1 of the USB settings byte (px_store.h st_usb) */
@@ -186,7 +303,8 @@ static void px_midi_dual_sync(uint32_t slot);         /* (below: the engine told
 #define PX_SCN_LEN 3u
 static char px_scn[PX_SC_N][PX_SCN_LEN], px_scn_saved[PX_SC_N][PX_SCN_LEN];
 static void px_scn_load(uint32_t slot);                /* (px_store.h: the slot's, from the copy in use) */
-#define PX_SC_LOAD(i) (px_sc = px_sc_tab[(i) < 52u ? (i) : 0u], px_scn_load(i), px_midi_dual_sync(i))   /* (51: its pedal) */
+#define PX_SC_LOAD(i) (px_sc = px_sc_tab[(i) < 52u ? (i) : 0u], px_si = (uint16_t)px_si_get(i), px_scn_load(i), \
+                      px_midi_dual_sync(i))       /* (51: its pedal; 53: its scenes' INPUT steps) */
 static void px_scene_label(char *t, uint32_t n, int narrow)   /* scene n's name, else "SCENE 2" ("SC 2" where narrow) */
 {
     uint32_t i = 0;
@@ -254,7 +372,13 @@ static void px_cc_build(void)
         t.kind = PXM_ON;   px_cc_tab[px_cc_of(&t)] = t;
         t.kind = PXM_TOGGLE; px_cc_tab[px_cc_of(&t)] = t;
         t.kind = PXM_TYPE; px_cc_tab[px_cc_of(&t)] = t;
-        for (k = 0; k < PX_NPAR; k++) { t.kind = PXM_PARAM; t.k = (uint8_t)k; px_cc_tab[px_cc_of(&t)] = t; }
+        for (k = 0; k < PX_NPAR; k++) {
+#if PX_OWN_FX   /* test build 53: GT's GTR TONE + PICKUP and INPUT are no Control Change (36, 37): a preset's set-up, not played; and
+                 * 36 is a 14-bit pedal's second half (CC 4's) */
+            if (b == PX_B_GATE && k >= PX_GT_TONE) continue;
+#endif
+            t.kind = PXM_PARAM; t.k = (uint8_t)k; px_cc_tab[px_cc_of(&t)] = t;
+        }
     }
     t.kind = PXM_MASTER; t.blk = t.k = 0;
     px_cc_tab[px_cc_of(&t)] = t;
@@ -308,6 +432,11 @@ static int px_midi_map_valid(const px_map_t *e)        /* an entry as stored: em
  * slot takes its own with it (px_midi_pl_copy) */
 #define PXM_PL_N 64u
 #define PXM_PL_SLOTS 52u                               /* (px_store.h ST_NSLOT) */
+/* ettorebox beta 54: the pedal's own footswitches, learned as a controller's switch is (on a block page's ON row, on a scene in
+ * SCENES' view), with these two numbers; in SWITCHES' view they switch what they have (ui.h ui_stomp). One may have several rows
+ * in a preset (px_midi_pl_put). No controller's: px_midi_io.h drops a received CC 126 or 127 */
+#define PXM_CC_FSL 126u                                /* the left footswitch */
+#define PXM_CC_FSR 127u                                /* the right one */
 typedef struct { uint8_t slot, src, dst, mode, lo, hi, clo, chi; } px_pl_t;   /* slot 0xFF: an empty entry. lo / hi (test
                                        * build 47): a pedal's setting at the heel and the toe, 0..100; clo / chi (48): the values
                                        * the pedal sends there, 0..127 (the same twice: 0 and 127) */
@@ -374,13 +503,14 @@ static uint32_t px_midi_pl_copy(uint32_t from, uint32_t to)
     }
     return lost;
 }
-/* one control a meaning, one row a control, in a preset: this one replaces what the preset had for either. 0, or -1: full */
+/* one control a meaning, one row a control, in a preset: this one replaces what the preset had for either (beta 54: a footswitch
+ * keeps its other rows, all switched together). 0, or -1: full */
 static int px_midi_pl_put(uint32_t slot, uint32_t src, uint32_t dst, uint32_t mode, uint32_t d_other, uint32_t lo, uint32_t hi)
 {
     int free_i = -1;
     for (uint32_t i = 0; i < PXM_PL_N; i++) {
         px_pl_t *e = &mid_pl[i];
-        if (e->slot == slot && (e->src == src || e->dst == dst || e->dst == d_other)) memset(e, 0xFF, sizeof *e);
+        if (e->slot == slot && ((e->src == src && src < PXM_CC_FSL) || e->dst == dst || e->dst == d_other)) memset(e, 0xFF, sizeof *e);
         if (e->slot == slot && (mode & PXM_PL_DUAL)) e->mode &= (uint8_t)~PXM_PL_DUAL;   /* (51: one two-job pedal a preset) */
         if (e->slot == 0xFFu && free_i < 0) free_i = (int)i;
     }
@@ -620,6 +750,9 @@ static uint32_t px_midi_tx_next(px_midi_tx_t *t, const px_midi_cfg_t *cfg, const
                    (pxm_type_to_cc(cur->type[b], (uint32_t)px_ntypes((int)b)) << 24);
         }
         for (k = 0; k < PX_NPAR; k++) {
+#if PX_OWN_FX
+            if (b == PX_B_GATE && k >= PX_GT_TONE) continue;   /* (test build 53: not sent either, as not read) */
+#endif
             if (cur->p[b][k] != t->seen.p[b][k]) {
                 t->seen.p[b][k] = cur->p[b][k];
                 c.kind = PXM_PARAM; c.blk = (uint8_t)b; c.k = (uint8_t)k;

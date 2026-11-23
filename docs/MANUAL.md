@@ -1,9 +1,11 @@
 # ettorebox manual
 
 ettorebox is guitar firmware for the M-VAVE BlackBox, built on [OpenPocket](https://github.com/isod89/openpocket). This
-manual covers beta 52: installing it, every control and page of the pedal, the sounds, presets and scenes, controllers,
+manual covers beta 54: installing it, every control and page of the pedal, the sounds, presets and scenes, controllers,
 Bluetooth, USB, the web editor, and what is inside. Up to beta 51 the pedal showed OpenPocket's name (start-up screen,
-Bluetooth, USB); everything else here applies to beta 51 too.
+Bluetooth, USB); beta 53 made the GT page the preset's input ([4](#the-presets-input-the-gt-page)), with an input check that
+tells you, and sets, the level your guitar needs ([4](#the-input-check)); beta 54 gave the two footswitches three modes
+([The footswitches' three modes](#the-footswitches-three-modes)) and steadied LOW OCTAVE's high notes.
 
 It is a beta. Keep M-VAVE's own firmware file at hand, and read [Before you install](#before-you-install) first.
 
@@ -47,13 +49,13 @@ It is a beta. Keep M-VAVE's own firmware file at hand, and read [Before you inst
 4. Press **Install**. It takes one to two minutes: do not unplug or switch the pedal off, keep the tab open. The steps
    light up as they go: start, check, loader, write, restart, done. Nothing is written before the pedal has checked the
    whole package.
-5. The pedal restarts. Its start-up screen reads **`ETTOREBOX`** and **`BETA 52  OPENPOCKET V42`** (the OpenPocket
+5. The pedal restarts. Its start-up screen reads **`ETTOREBOX`** and **`BETA 53  OPENPOCKET V42`** (the OpenPocket
    version it is built on).
 
 From the command line instead, with the repository cloned:
 
 ```bash
-gh release download beta-52 -R steponme82/ettorebox -D build/bt --clobber
+gh release download beta-53 -R steponme82/ettorebox -D build/bt --clobber
 ```
 
 ```bash
@@ -86,11 +88,11 @@ act as soon as you press them.
 | **PARA knob** | Turn: pick a block on PLAY, a row on a block's page, change the value you are editing (turn fast: steps of 5) | |
 | **PUSH** (press the knob) | PLAY: open the selected block's page. On a row: edit it (on ON: switch the block on or off). While editing: done. **Press twice quickly** on PLAY: MOVE the block | **0.8 s: SAVE** |
 | **HOME** | Back to PLAY. On PLAY: the preset list | **0.7 s: the tuner**; keep holding (1.4 s): **diagnostics** |
-| **FX** | The next block of FX's group (DRV, SFX, SYN, PIT, CMP, GT, EQ), in the preset's order | **0.8 s**: on PLAY, **SETTINGS**. On a block's row: **learn a controller** on it, or clear the one it has. On MODEL: the preset's MIDI table. In SCENES' view: learn (or clear) the selected scene's switch |
+| **FX** | The next block of FX's group (DRV, SFX, SYN, PIT, CMP, GT, EQ), in the preset's order | **0.8 s**: on PLAY, **SETTINGS**. On a block's row: **learn a controller** on it, or clear the one it has. On MODEL: the preset's MIDI table. On GT's INPUT (or SETTINGS' INPUT): the **input check**. In SCENES' view: learn (or clear) the selected scene's switch |
 | **AMP, MOD, DLY, REV** | Open the block's page; press again: switch it on or off | |
 | **CAB** | Open the CAB page; press again: on or off | **0.8 s: PLAY's next view** (CHAIN, SWITCHES, SCENES) |
-| **Right / left footswitch** | Next / previous preset (from a block's page it also goes back to PLAY). In SCENES' view: the next / previous scene. On SETTINGS: the next / previous row | |
-| **Both footswitches** | The tuner (the second within 0.15 s of the first; the first one's step is taken back) | |
+| **Right / left footswitch** | Next / previous preset (from a block's page it also goes back to PLAY). In SCENES' view: the next / previous scene. In STOMP (SWITCHES' view): what it is learned on in this preset, else the next / previous preset. On SETTINGS: the next / previous row | |
+| **Both footswitches** | Let go at once: **the footswitches' next mode**, PRESETS, STOMP, SCENES ([5](#the-footswitches-three-modes)). The second within 0.15 s of the first; the first one's step is taken back | **0.7 s: the tuner** |
 | **Left footswitch, a SYN PAD on** | Catch the chord you are playing (it no longer goes to the previous preset) | **0.7 s: the pad fades out** |
 | **MASTER** | The output volume (`VOL` on PLAY) | |
 
@@ -136,11 +138,13 @@ The main screen.
 **Overload guard:** if the DSP ever runs over the safety limit, the effects are bypassed until the next change. A red bar
 says `OVERLOAD: SOUND BYPASSED`, and the footer says `TURN A BLOCK OFF`.
 
-**Hold CAB** to turn PLAY's view round:
+**Hold CAB** to turn PLAY's view round. Both footswitches turn it too, and with it what the footswitches do
+([The footswitches' three modes](#the-footswitches-three-modes)):
 
 - **CHAIN:** as above.
 - **SWITCHES:** what each controller switch does in this preset, in big tiles: a block (lit when on) or a scene (lit while
-  it plays), in the switches' order. Turning the knob shows the chain for 5 seconds.
+  it plays), the pedal's own footswitches first (`FOOT L`, `FOOT R`), then the switches' order. Turning the knob shows the
+  chain for 5 seconds.
 - **SCENES:** the preset's four scenes, the one playing lit, the knob's in a ring, each with its switch's number. The knob
   picks one, PUSH recalls it, hold FX learns its switch. Here holding FX does not open SETTINGS: hold CAB back to CHAIN
   first.
@@ -152,7 +156,8 @@ The view is kept with the settings at the next save.
 The block's band on its colour (with the preset's number), then its rows: **ON**, **MODEL**, and up to five settings, each
 with its value and a bar. Values show in real units where a bare number would mean little (`450 MS`, `+5TH`, `+1.5 DB`).
 A setting that has a controller learned on it shows its number after its name (`GAIN CC4`). The DSP load sits at the
-bottom right. While a NAM model loads, MODEL reads `LOADING`.
+bottom right. While a NAM model loads, MODEL reads `LOADING`. The GT page has six rows, a little shorter: the gate's, then
+the preset's input ([4](#the-presets-input-the-gt-page)).
 
 ### The preset list
 
@@ -173,7 +178,7 @@ it, PUSH does nothing). The sound mutes for about 0.1 s while it saves. The peda
 
 ### Tuner and diagnostics
 
-Hold HOME (or press both footswitches): the tuner. The note, how far off in cents, and an arrow towards in tune. Your
+Hold HOME (or hold both footswitches 0.7 s): the tuner. The note, how far off in cents, and an arrow towards in tune. Your
 guitar is muted; the phone's music keeps playing. Any button or footswitch leaves.
 
 Keep holding HOME (or hold it again on the tuner): **diagnostics**, the two pages a bug report asks for a photo of. The
@@ -204,7 +209,7 @@ no clicks.
 
 | Block | Models |
 | --- | --- |
-| GT | NOISE GATE. Its third row, **PRESET LVL**, is the preset's own level: `-INF` (silence) at 0, 0 dB at 50, +15 dB at 100 |
+| GT | NOISE GATE: THRESH and RELEASE, then the preset's own: **PRESET LVL** (its level: `-INF` at 0, 0 dB at 50, +15 dB at 100), **GTR TONE**, **PICKUP** and **INPUT** (below) |
 | CMP | SQUASH, STUDIO, OPTO LA-2, SLOW SWELL |
 | PIT | OCTAVER, POLY OCTAVE, WHAMMY (swept by its PEDAL row or the expression pedal), HARMONIZER, DETUNE, **LOW OCTAVE** (a polyphonic octave down on the low strings, as an OC-3) |
 | SFX | ENVELOPE WAH, AUTO WAH, RING MOD, BITCRUSHER, SLICER, LO-FI RADIO, SQUARE SYNTH, **WAH** (a wah pedal, on the expression pedal or its PEDAL row) |
@@ -224,10 +229,63 @@ detail: [SOUNDS-AND-CONTROLS.md](SOUNDS-AND-CONTROLS.md); ettorebox's own effect
 - **The analog and tape delays** (ANALOG BBD, MEMORY MAN, TAPE EP-3, SPACE ECHO, LO-FI) self-oscillate above FDBK about
   90, like the real ones: lower FDBK to stop it.
 - **TAILS** (SETTINGS): the delay and the reverb ring out when they go off, and across a preset change.
+- **LOW OCTAVE** follows the note you play: from beta 54 the high notes keep their own octave, steady, even over a single
+  coil's hum, and COMP no longer adds an octave to the notes above RANGE ([OWN-FX.md](OWN-FX.md), "The top notes").
 - **Levels:** every amp plays at the same loudness with GAIN at noon, and a block switched on with its knobs at noon keeps
   the loudness. PRESET LVL balances your presets. The output ends in a soft limiter, not a hard clip.
 - **GUITAR TONE and PICKUP** (SETTINGS): the input loads your pickup as a real amp's input would, named by the sound
   (BRIGHT, NATURAL, SMOOTH, WARM, WARMER, PUNCHY, DARK, DARKER, MUDDY).
+
+### The preset's input: the GT page
+
+Everything that happens before the chain belongs to the preset, on its GT page: after the gate's THRESH and RELEASE and the
+preset's PRESET LVL come three rows, each **SETTINGS** (the SETTINGS page's own row) or a value of this preset's:
+
+- **GTR TONE**: BRIGHT, NATURAL, SMOOTH, WARM, WARMER, PUNCHY, DARK, DARKER, MUDDY: how the input loads your pickup, by
+  its sound;
+- **PICKUP**: SINGLE, HUMBUCK, P90, the pickup GTR TONE assumes;
+- **INPUT**: -10 to +10 dB, the guitar's level into the chain (more for a weak pickup or a piezo, less for hot humbuckers).
+
+The knob steps one item a detent and stops at the ends. A preset per guitar, a brighter preset for some songs: set them
+here. A scene can have its own tone and its own INPUT step over the preset's ([5](#scenes)): a piezo scene on NATURAL and
++9 dB in a preset on MUDDY. Which wins: the scene's tone, then the preset's, then SETTINGS'. Changes glide in 24 ms, with no
+click. Every factory preset says SETTINGS in all three, so nothing changes until you set one; they act whether the gate is
+on or off. GTR TONE and PICKUP take no controller (`NOT FOR A CONTROLLER`): scenes switch the tone.
+
+### The input check
+
+The amps and drives were voiced for one level: a guitar played hard reaching about -16 dB into the chain (a sixth of full
+scale). The pedal listens to your guitar and tells you how far you are from it:
+
+- **Select GT's INPUT row and play hard.** The bottom line says `LOW +6 DB`, `GOOD`, `HOT -3 DB`, or `CLIPS: GUITAR DOWN`
+  (the guitar clips the converter before INPUT: only the guitar's volume can help). After the verdict, the blocks of this
+  preset that react to the level: `LOW +6 DB: AMP DRV`; `CLEAN` where none does, and there INPUT is just volume (balance
+  with PRESET LVL). A preset with MONO SYNTH, PWM SYNTH, BASS SYNTH or TAPE FLUTE aims 4 dB higher: their note follower
+  likes a strong signal. While you turn INPUT, the line follows.
+- **Hold FX on INPUT: the pedal sets it.** The INPUT CHECK page says `PLAY HARD`, listens for 4 seconds from your first note,
+  then shows what it found and what it will set. PUSH sets it, HOME leaves things as they were. While a scene plays, the
+  knob picks where it goes: **THE PATCH** (the GT page's INPUT) or **THIS SCENE** (its INPUT step). SAVE keeps it.
+- **SETTINGS' INPUT row** has the same check and the same hold of FX: it sets your guitar's level for every preset left on
+  SETTINGS.
+
+Gain staging, the easy way: one input check on SETTINGS for your main guitar; then, only where it's needed, one on a
+preset (another guitar, a synth sound) or a scene (a piezo).
+
+### The general EQ: every preset at once
+
+A room, a PA, a small speaker or a pair of headphones each colour the sound. SETTINGS' general EQ makes up for it in every preset
+at once, so you don't touch the presets themselves. It sits at the very end, after the whole chain and before the volume.
+Five rows on SETTINGS, after PICKUP:
+
+- **EQ BASS:** -12 DB to +12 DB, a shelf at 100 Hz (the boom of a room, a speaker's missing lows).
+- **EQ MID:** -12 DB to +12 DB, a peak or a dip at **EQ MID FREQ** (160 HZ to 5000 HZ), as wide as **EQ MID WIDTH** says
+  (VERY WIDE, WIDE, MEDIUM, NARROW, VERY NARROW). A narrow dip takes out one resonance; a wide one a whole region.
+- **EQ TREBLE:** -12 DB to +12 DB, a shelf at 3.5 kHz (a dull PA, harsh headphones).
+
+All three at 0 DB is off: nothing is done to the sound. The EQ shapes the guitar only: the phone's music goes around it,
+and so does GTR+BASS's bass on the right. In STEREO both sides get it. Cut rather than boost where you can: a boost also
+raises the level, which reaches the output's limit sooner. A change is heard at once and kept when you leave SETTINGS; the
+editor has the same rows.
 
 ### Factory presets
 
@@ -258,9 +316,38 @@ Like Helix's snapshots: four scenes a preset, each a set of blocks on and off. R
 - **Scenes and switches:** a block can have its own switch and be in the scenes too. SETTINGS' **SCENE+SWITCH** decides:
   **SWITCH WINS** (the default: the switch owns that block, scenes set the others) or **SCENE WINS** (scenes set it too;
   the switch's change lasts until the next scene).
-- **The footswitches in SCENES' view:** SETTINGS' **SCENE FOOTSW**: **SCENES** (the default) or **PRESETS**.
+- **The footswitches in SCENES' view:** SETTINGS' **SCENE FOOTSW**: **SCENES** (the default) or **PRESETS**. In a preset
+  with no scene yet they step the presets: make the first with the knob and PUSH (or in the web editor).
+- **Tone and input:** each scene can have a guitar tone of its own (the web editor's scenes grid, TONE: **Preset**, or one
+  of the nine), over the preset's GTR TONE, and an INPUT step over the preset's INPUT (INPUT: **Patch**, or -6, -3, +3, +6,
+  +9, +12, +15 dB; or the input check while the scene plays). SAVE keeps them with the scene.
 
 A good start with a Chocolate's four switches: two scenes and two blocks.
+
+### The footswitches' three modes
+
+Press both footswitches and let go: they go to their next mode, and PLAY's view with them. The footer says which
+(`FOOTSW: STOMP`). Hold both 0.7 s instead for the tuner.
+
+| Mode | PLAY's view | The footswitches |
+| --- | --- | --- |
+| **PRESETS** | CHAIN | the next / previous preset |
+| **STOMP** | SWITCHES | each one switches what it is learned on in this preset; one with nothing learned steps the presets |
+| **SCENES** | SCENES | the next / previous scene; in a preset with no scene yet, the presets |
+
+- **Always the three in turn**, in every preset. One the preset has nothing for (no footswitch learned, no scene yet) says
+  so in amber, `FOOTSW: STOMP (EMPTY)`, and there the footswitches step the presets.
+- **A footswitch for STOMP:** learn it as a controller's switch ([6.3](#63-learning-a-control-on-the-pedal)). On a block's
+  page select ON, hold FX, PUSH, and press the footswitch (`LEARNED: FOOT L`). Learn the same footswitch on more blocks and
+  they go together: all on if the first is off, else all off. For example a 12-STRING and a chorus on the left, a boost on
+  the right.
+- **A scene on a footswitch:** in SCENES' view hold FX on the scene's tile and press the footswitch. In STOMP a press goes to
+  that scene, the next one back to the scene before.
+- **Scenes leave a footswitch's blocks to it**, as any switch's (SETTINGS' SCENE+SWITCH, [Scenes](#scenes)).
+- **Each preset has its own**, kept with its learned controls (64 for all the presets together): `FOOT L` and `FOOT R` in
+  its MIDI table (hold FX on MODEL) and in the web editor. Holding FX on a block's ON row clears that row only.
+- **The mode** is kept with the settings at the next save, as PLAY's view is.
+- Pressing both, the first footswitch acts for an instant before it is taken back: a block switched that long may be heard.
 
 ## 6. Controllers: the Chocolate and MIDI
 
@@ -280,7 +367,13 @@ seconds the pedal finds it, links and listens to it, with no phone in between. N
 
 ### 6.2 The Chocolate by USB cable
 
-SETTINGS' **USB PORT** on **FOOTSW** makes the pedal's USB-C port the USB MIDI host of a footswitch by cable. The pedal gives
+**A Chocolate Plus with its switch on H** is a USB host itself (the way it runs a Valeton GP-5): a USB-A to USB-C cable
+from its HOST port to the pedal's USB-C, and the pedal stays on USB PORT **COMPUTER**, as at every power-on. The pedal reads
+its switches as a computer's MIDI, so everything learned works as over Bluetooth. PLAY's battery reads `USB` while the
+Chocolate gives the cable its 5 V. Checked on a pedal with the Chocolate's own USB-C powered; on its battery alone, not
+yet. If a press acts twice (the Chocolate linked by Bluetooth as well), tell us.
+
+**A footswitch that is only a USB device** (a Chocolate on U): SETTINGS' **USB PORT** on **FOOTSW** makes the pedal's USB-C port the USB MIDI host of a footswitch by cable. The pedal gives
 no 5 V on its port, so an OTG adapter with a charging input goes between them, with a charger or a power bank in it (it
 charges the pedal too). The setting is never saved: every power-on is the normal USB device again. While the cable's
 footswitch is connected, Bluetooth MIDI is not read (no double presses). This one is new: checked on a computer, not yet
@@ -308,11 +401,16 @@ it is written at once (an unsaved sound stays unsaved).
 
 - On **ON**, a switch flips the block (a momentary switch on its press; one that sends a message a press, on each one), a
   pedal switches it (on at 64 and up).
-- A row has one control and a control one row in a preset: learning another replaces it.
+- A row has one control and a control one row in a preset: learning another replaces it. The pedal's own footswitches are
+  the exception: one can have several rows ([The footswitches' three modes](#the-footswitches-three-modes)).
+- **The pedal's footswitches** are switches too, on ON and on a scene: pressed at PRESS THE SWITCH they are learned for STOMP
+  (`FOOT L`, `FOOT R`). Not on a setting: there they do nothing.
 - A selected row that has one says so (`CC 30  HOLD FX: CLEAR`): **hold FX on it to clear it.**
 - **Hold FX on MODEL:** the preset's MIDI table, every control of this preset (`CC 7  SFX PEDAL +VOL`), then the editor's
   in grey (`ALL: ...`: they work in every preset). The knob picks, hold FX clears, HOME goes back.
 - A preset's own control comes before the editor's, which come before the pedal's own numbers (6.5).
+- Not on GT's GTR TONE and PICKUP: `NOT FOR A CONTROLLER` (a preset's set-up; a scene switches the tone). On GT's INPUT,
+  holding FX opens the input check instead.
 
 ### 6.4 The two-job expression pedal
 
@@ -343,7 +441,7 @@ From any controller, over Bluetooth or USB, on SETTINGS' CHANNEL (OMNI by defaul
 | CC 8 to 19 | flip a block on or off (SETTINGS' SWITCH: MOMENT or LATCH) |
 | CC 20 to 31 | a block on (64 and up) or off |
 | CC 52 to 63 | a block's model |
-| each setting's own number | that setting, 0 to 127 as 0 to 100 (the table: [MIDI.md](MIDI.md)) |
+| each setting's own number | that setting, 0 to 127 as 0 to 100 (the table: [MIDI.md](MIDI.md)); not GT's GTR TONE + PICKUP and INPUT: CC 36 and 37 do nothing |
 | CC 64 (64 and up) | a SYN PAD catches the chord |
 | CC 65 to 68 (any value) | recall scene 1 to 4 |
 | CC 116 (64 and up) | a tap of the delay's tempo |
@@ -408,21 +506,22 @@ One phone for music (A2DP), the Chocolate (the pedal as its central) and the edi
 
 - **Presets:** the list (search, All, Yours, Factory), **Import**, **Back up all**.
 - **Sound:** the preset on the pedal: its name (rename it here), its chain (drag a block to move it; arrow keys choose, Space
-  switches, Alt + arrows move), each block's model and settings, the four scenes under the chain (a tap recalls one, a grid
-  sets their blocks, a field names them), its **Level** (PRESET LVL), **Compare**, **Revert**, **Save**, **Save as…**.
+  switches, Alt + arrows move), each block's model and settings (the GT block's GTR TONE, PICKUP and INPUT as lists), the
+  four scenes under the chain (a tap recalls one, a grid sets their blocks, TONE and INPUT, a field names them), its
+  **Level** (PRESET LVL), **Compare**, **Revert**, **Save**, **Save as…**.
 - **Models and cabinets:** the 16 NAM capture slots and the 8 IR slots: amp captures from TONE3000 or your files, cabinet
   IRs from your WAV files, which presets use a slot, rename, move, remove.
 - **MIDI:** what is connected and what it sends, the pedal's map named for the current preset, the controls learned in the
   editor (up to 8, kept in the pedal, in every preset), the preset's own (their heel and toe, and the box **or VOLUME when
   SFX is off**), and these settings: SWITCH, INPUT, TAILS, BT POWER, OUTPUT, USB SEND, USB RETURN, GUITAR, GUITAR TONE,
-  PICKUP, PLAY VIEW, the two scene rows and **Volume pedal**. CHANNEL, SEND, CLOCK > DELAY, USB AUDIO and USB PORT are set
-  on the pedal.
+  PICKUP, PLAY VIEW, the two scene rows, **Volume pedal** and the **general EQ**. CHANNEL, SEND, CLOCK > DELAY, USB AUDIO and USB PORT
+  are set on the pedal.
 
 Keys: `/` searches the presets, `[` and `]` step to the previous and next one, Ctrl or ⌘ + S saves, F2 renames the preset
 chosen in the list. The connection's details (click the pill at the top right) name the firmware: `ettorebox (OpenPocket
-v42 FX7)`.
+v42 FX8)`.
 
-The protocol: [EDITOR-PROTOCOL.md](EDITOR-PROTOCOL.md) (protocol 7 for this firmware).
+The protocol: [EDITOR-PROTOCOL.md](EDITOR-PROTOCOL.md) (protocol 8 for this firmware).
 
 ## 10. SETTINGS, row by row
 
@@ -432,13 +531,18 @@ The protocol: [EDITOR-PROTOCOL.md](EDITOR-PROTOCOL.md) (protocol 7 for this firm
 | SEND | ON, OFF | ON | the pedal sends Program and Control Change for what you do on it |
 | CLOCK > DELAY | ON, OFF | OFF | a computer's MIDI clock sets the delay's time |
 | SWITCH | MOMENT, LATCH | MOMENT | how CC 8 to 19 flip a block: MOMENT for a switch that sends 127 then 0 when let go, LATCH for one that sends one message a press |
-| PLAY VIEW | CHAIN, SWITCHES, SCENES | CHAIN | PLAY's view (also: hold CAB) |
+| PLAY VIEW | CHAIN, SWITCHES, SCENES | CHAIN | PLAY's view, and so the footswitches' mode (also: hold CAB, or both footswitches) |
 | SCENE+SWITCH | SWITCH WINS, SCENE WINS | SWITCH WINS | whether scenes set a block that has its own switch |
 | SCENE FOOTSW | SCENES, PRESETS | SCENES | what the footswitches do in SCENES' view |
 | VOL PEDAL | AT INPUT, BEFORE DLY | AT INPUT | where the expression pedal's volume acts |
-| INPUT | -10 DB to +10 DB | 0 DB | the guitar's level into the chain |
-| GUITAR TONE | BRIGHT, NATURAL, SMOOTH, WARM, WARMER, PUNCHY, DARK, DARKER, MUDDY | NATURAL | the pickup's load, by its sound |
-| PICKUP | SINGLE, HUMBUCK, P90 | SINGLE | the pickup GUITAR TONE assumes |
+| INPUT | -10 DB to +10 DB | 0 DB | the guitar's level into the chain (where a preset's GT page says SETTINGS); its bottom line is the input check, hold FX sets it |
+| GUITAR TONE | BRIGHT, NATURAL, SMOOTH, WARM, WARMER, PUNCHY, DARK, DARKER, MUDDY | NATURAL | the pickup's load, by its sound (where the scene and the preset say nothing) |
+| PICKUP | SINGLE, HUMBUCK, P90 | SINGLE | the pickup GUITAR TONE assumes (where the preset says SETTINGS) |
+| EQ BASS | -12 DB to +12 DB | 0 DB | a shelf at 100 Hz over the whole guitar, every preset ([The general EQ](#the-general-eq-every-preset-at-once)) |
+| EQ MID | -12 DB to +12 DB | 0 DB | a peak or a dip at EQ MID FREQ |
+| EQ MID FREQ | 160 HZ to 5000 HZ | 800 HZ | where EQ MID acts |
+| EQ MID WIDTH | VERY WIDE, WIDE, MEDIUM, NARROW, VERY NARROW | MEDIUM | how wide EQ MID acts |
+| EQ TREBLE | -12 DB to +12 DB | 0 DB | a shelf at 3.5 kHz |
 | TAILS | OFF, ON | OFF | the delay and the reverb ring out when they go off and across presets |
 | BT POWER | HIGH, MID, LOW | HIGH | the radio's transmit power |
 | OUTPUT | MONO, STEREO, GTR+BASS | MONO | STEREO: the delay, the reverb, the modulations and the phone's music spread; GTR+BASS: the guitar left, LOW OCTAVE's bass right |
@@ -458,6 +562,8 @@ The protocol: [EDITOR-PROTOCOL.md](EDITOR-PROTOCOL.md) (protocol 7 for this firm
 | The Chocolate does not link | Both on, the Chocolate in a MIDI mode and not connected to a phone's app; DLY not held at power-on; one Chocolate per power-on |
 | A controller does nothing | SETTINGS: `LAST:` shows what arrived; check CHANNEL; a control learned in one preset works only there |
 | Crackles, or `DSP` red | A lighter preset (heavy: drives, high-gain amps, organs, the big reverbs); the diagnostics' costliest blocks |
+| MONO SYNTH misses notes, starts late | The input check on that preset's INPUT (GT page, hold FX): its note follower listens through a gate of fixed level and wants a strong signal. Single notes, the neck pickup, other strings muted |
+| A sound is too clean or too dirty with your guitar | The input check: the amps and drives were voiced for one input level |
 | `LAST START FAILED` at start-up | The start before crashed, so the effects are off for this start (`SAFE` before the load). Switch off and on again; if it comes back, report it with a photo of that screen |
 | It restarts in a loop | The installer page's rescue mode; then [RESCUE.md](RESCUE.md) |
 | A bug to report | An issue at https://github.com/steponme82/ettorebox: what you did and saw, the M-VAVE firmware the pedal had before, photos of the two diagnostics pages, and the log: with the repository cloned and the pedal on USB, `make log` (the start-up report, the last start's record and Bluetooth's counters, each explained) |
@@ -500,8 +606,8 @@ For the curious, and for anyone who wants to help. Each topic links the document
   through simulated power cuts, the installer and the editor against simulated pedals. [BUILDING.md](BUILDING.md).
 - **The simulator:** `make sim` runs the pedal's own screen, editor and preset code on your computer, with a front panel
   you can click, and the sound through bundled guitar loops. [SIMULATOR.md](SIMULATOR.md).
-- **The room left** in beta 52: 6,692 bytes of the app's 644,928 in the flash, 1,248 bytes of main RAM and 536 bytes of the RAM
-  code window. Every new feature has to pay for itself.
+- **The room left** in beta 54: 4,176 bytes of the app's 644,928 in the flash, 928 bytes of main RAM and 296 bytes of the RAM
+  code window, and 4 bytes of the preset store. Every new feature has to pay for itself.
 
 ## 13. What it leaves out
 

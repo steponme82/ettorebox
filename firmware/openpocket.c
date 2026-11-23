@@ -18,7 +18,7 @@
 #endif
 #define FELUCCA_ID "FM-1_900"
 /* the Bluetooth audio test build (docs/BT-AUDIO-TEST.md): its boot text and its id for the second core's bar (app_main) */
-#define BT_TEST_BUILD 52
+#define BT_TEST_BUILD 54
 #define BT_STR_(x) #x
 #define BT_STR(x) BT_STR_(x)
 #define BT_TEST_BUILD_TEXT BT_STR(BT_TEST_BUILD)
@@ -607,6 +607,7 @@ static const int8_t QDEC[16] = {0,-1,1,0, 1,0,0,-1, -1,0,0,1, 0,1,-1,0};
 #define PX_PAD_PRESS() px_pad_press(&g_eng)
 #define PX_PAD_STOP() px_pad_stop(&g_eng)
 #define PX_EXP_SET(v) px_exp_set((int)(v))   /* test build 25: px_midi_io.h's CC 117, the expression pedal */
+#define PX_IN_PEAK() a_in_peak_take()     /* test build 53: the input check's loudest lately (px_audio.h, the ISR) */
 #endif
 #if OP_BT_AUDIO     /* test build 26: ui.h's waits on a message ("SAVED", 0.7 s) serve the radio, as the main loop does */
 void ble_test_poll(void);
@@ -1051,6 +1052,11 @@ static void app_main(void)
 #endif
         px_midi_service();               /* USB-MIDI: Program / Control Change in, the pedal's own changes out */
         lights_update(&PRESET, ui_mode == M_TUNER, now);   /* the button lights follow the blocks */
+#if PX_OWN_FX
+        a_in_sync(now, &PRESET, px_scene_tone(), px_scene_in_db());   /* test build 53: the input the preset and the scene
+                                                                        * ask for, glided */
+        a_eq_sync();                     /* ettorebox beta 53: SETTINGS' EQ, designed here, run by the audio (px_audio.h) */
+#endif
         if (ui_mode != M_TUNER) {        /* DSP load in the status corner: "DSP 42%", "PEAK 150%" (bypassed), "SAFE 42%" */
             static uint32_t t_cpu;
             static uint8_t ld_shown;

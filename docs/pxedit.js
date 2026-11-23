@@ -14,6 +14,17 @@ export const C = { INFO: 1, CAT_BLOCK: 2, CAT_TYPE: 3, TEXTS: 4, STATE: 5, SET: 
 export const NAM_CHUNK = 112;     // bytes per NAM_WRITE (firmware/px_models.h NM_CHUNK)
 // test build 50: a scene's name as the pedal keeps it: 3 characters of ASCII 32..126 at most, in capitals as the pedal draws them
 export const cleanSceneName = (s) => String(s ?? "").toUpperCase().replace(/[^\x20-\x7E]/g, "").trim().slice(0, 3).trim();
+// protocol 8 (test build 53): the GT page's input settings, as firmware/px_midi.h keeps them. GTR TONE in the pedal's knob order
+// (1..9; 0 SETTINGS': the SETTINGS page's GUITAR TONE), PICKUP (1..3; 0 SETTINGS'), both in the GT block's 4th setting (tone +
+// 10 x pickup); INPUT in its 5th (0 SETTINGS', 1..21 -10..+10 dB). A scene's tone: the same 0..9, 0 the preset's
+export const TONES = ["BRIGHT", "NATURAL", "SMOOTH", "WARM", "WARMER", "PUNCHY", "DARK", "DARKER", "MUDDY"];
+export const PICKUPS = ["SINGLE", "HUMBUCK", "P90"];
+export const GT_TONE_K = 3, GT_INPUT_K = 4;
+export const gtTone = (v) => (v | 0) % 10;
+export const gtPickup = (v) => Math.min(3, Math.floor((v | 0) / 10));
+export const gtPack = (tone, pickup) => (tone | 0) + 10 * (pickup | 0);
+// a scene's INPUT step over its patch's INPUT: 0 none, then these dB (firmware/px_midi.h PX_SI_DB)
+export const SCENE_STEPS_DB = [0, -6, -3, 3, 6, 9, 12, 15];
 export const P_SIZE = 110;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function fail(code, msg) { const e = new Error(msg); e.code = code; return e; }
@@ -327,22 +338,27 @@ export class Editor {
   // Protocol 6 (test builds 46 to 49): more, after the routing: { tone: GUITAR TONE (0 NATURAL, 1 SMOOTH, 2 WARM, 3 WARMER,
   // 4 PUNCHY, 5 DARK, 6 DARKER, 7 MUDDY, 8 BRIGHT), pickup: PICKUP (0 SINGLE, 1 HUMBUCK, 2 P90), view: PLAY VIEW (0 CHAIN,
   // 1 SWITCHES, 2 SCENES), sceneWins: SCENE+SWITCH (false SWITCH WINS), feetPresets: SCENE FOOTSW (false SCENES), volAt (protocol
-  // 7, test build 51): VOL PEDAL, where the expression pedal's volume acts (0 AT INPUT, 1 BEFORE DLY) }, null before
+  // 7, test build 51): VOL PEDAL, where the expression pedal's volume acts (0 AT INPUT, 1 BEFORE DLY) }, null before.
+  // Protocol 8 (ettorebox beta 53): eq, SETTINGS' EQ, { bass, mid, treble (dB), freq, width (indices) }, null from a pedal before
   get hasPedalLearn() { return !!(this.info && this.info.proto >= 5); }
   _map(r) {
     const q = new Reader(r), rc = q.b(), each = !!q.b(), inputDb = q.b() - 10, fl = q.b(), n = q.b(), entries = [];
     for (let i = 0; i < n; i++) { const on = q.b(), src = q.b(), dst = q.b(), mode = q.b(); entries.push(on ? { src, dst, mode } : null); }
     const ur = q.i < q.a.length ? q.b() : -1;   // (test build 43: after the entries)
     const tb = q.i < q.a.length ? q.b() : -1, vb = q.i < q.a.length ? q.b() : -1;   // (protocol 6: then two more)
+    const eb = q.i + 5 <= q.a.length ? [q.b(), q.b(), q.b(), q.b(), q.b()] : null;   // (protocol 8, ettorebox beta 53: then the EQ)
     return { rc, each, inputDb, tails: !!(fl & 1), btPower: (fl >> 1) & 3, outMode: (fl >> 3) & 3, entries,
       usb: ur < 0 ? null : { send: ur & 3, cut: !!(ur & 4), ret: (ur >> 3) & 15 },
-      more: tb < 0 || vb < 0 ? null : { tone: tb & 15, pickup: (tb >> 4) & 3, view: vb & 3, sceneWins: !!(vb & 4), feetPresets: !!(vb & 8), volAt: (vb >> 4) & 1 } };
+      more: tb < 0 || vb < 0 ? null : { tone: tb & 15, pickup: (tb >> 4) & 3, view: vb & 3, sceneWins: !!(vb & 4), feetPresets: !!(vb & 8), volAt: (vb >> 4) & 1 },
+      eq: eb && { bass: eb[0] - 12, mid: eb[1] - 12, freq: eb[2], width: eb[3], treble: eb[4] - 12 } };
   }
   async pedalMap() { return this._map(await this.request(C.MAP)); }
   // inputDb: SETTINGS' INPUT, -10..+10 dB (the guitar's level into the chain); tails: TAILS; btPower: 0 HIGH, 1 MID, 2 LOW;
   // outMode: OUTPUT, 0 MONO, 1 STEREO (DELAY's and REVERB's wet to the sides), 2 GTR+BASS (the guitar left, LOW OCTAVE's octave right)
   // more (protocol 6): as _map gives it; null leaves those settings as they are (the routing must then be sent too: usb)
-  async setPedalMap(each, entries, inputDb = 0, tails = false, btPower = 0, outMode = 0, usb = null, more = null) {
+  // eq (protocol 8, ettorebox beta 53): SETTINGS' EQ, as _map gives it, { bass, mid, treble: -12..+12 dB, freq: 0..15
+  // (EQ_HZ's), width: 0..4 (VERY WIDE .. VERY NARROW) }; null leaves it as it is (usb and more must then be sent too)
+  async setPedalMap(each, entries, inputDb = 0, tails = false, btPower = 0, outMode = 0, usb = null, more = null, eq = null) {
     const a = [1, each ? 1 : 0, Math.max(0, Math.min(20, Math.round(inputDb) + 10)),
       (tails ? 1 : 0) | (Math.max(0, Math.min(2, btPower | 0)) << 1) | (Math.max(0, Math.min(2, outMode | 0)) << 3)];
     for (const e of entries) a.push(...(e ? [1, e.src, e.dst, e.mode] : [0, 0, 0, 0]));
@@ -350,6 +366,8 @@ export class Editor {
     if (usb && more) a.push(Math.max(0, Math.min(8, more.tone | 0)) | Math.max(0, Math.min(2, more.pickup | 0)) << 4,
       Math.max(0, Math.min(2, more.view | 0)) | (more.sceneWins ? 4 : 0) | (more.feetPresets ? 8 : 0) |
       (this.hasTwoJobs && more.volAt ? 16 : 0));   // (bit 4 only to protocol 7: a test build 50 pedal refuses it)
+    const cl = (v, lo, hi) => Math.max(lo, Math.min(hi, Math.round(+v) || 0));
+    if (usb && more && eq) a.push(cl(eq.bass, -12, 12) + 12, cl(eq.mid, -12, 12) + 12, cl(eq.freq, 0, 15), cl(eq.width, 0, 4), cl(eq.treble, -12, 12) + 12);
     return this._map(await this.request(C.MAP, a, 4000));
   }
   // protocol 6 (test builds 46 to 49): a preset's own controls learned on the pedal (firmware/px_midi.h mid_pl), which its rows
@@ -362,6 +380,9 @@ export class Editor {
   // protocol 7 (test build 51): a preset's own pedal with two jobs (an entry's mode bit 6, docs/pxmidi.js PL_DUAL), and MAP's
   // VOL PEDAL (more.volAt)
   get hasTwoJobs() { return !!(this.info && this.info.proto >= 7); }
+  // protocol 8 (test build 53): the GT page is the preset's input (its 4th setting: the guitar's tone + 10 x the pickup, 0 each
+  // SETTINGS'; its 5th: INPUT, 0 SETTINGS', 1..21 -10..+10 dB), and each scene has a tone of its own (sceneTone)
+  get hasInputPerPreset() { return !!(this.info && this.info.proto >= 8); }
   _pl(r) {
     const q = new Reader(r), rc = q.b(), slot = q.b(), used = q.b(), places = q.b(), n = q.b(), entries = [];
     for (let i = 0; i < n; i++) entries.push({ src: q.b(), dst: q.b(), mode: q.b(), lo: q.b(), hi: q.b(), clo: q.b(), chi: q.b() });
@@ -374,7 +395,9 @@ export class Editor {
   // bit each, in the catalogue's block order). The scene playing is the blocks as they are now. Nothing here writes the
   // flash: SAVE keeps them with the sound, as on the pedal.
   // -> { rc (0 ok, 1 invalid), cur (the scene playing), set (the scenes stored, a bit each), masks [4], names [4] (test build
-  //    50: each scene's name, up to 3 characters, "" none; null from a pedal before it), saved: { cur, set, masks, names } (as
+  //    50: each scene's name, up to 3 characters, "" none; null from a pedal before it), tones [4] (protocol 8: each scene's
+  //    GUITAR TONE, 0 the preset's, 1..9 in the pedal's knob order; null before it), steps [4] (each scene's INPUT step over the
+  //    patch's, 0..7: SCENE_STEPS_DB), saved: { cur, set, masks, names, tones, steps } (as
   //    saved with the preset) }
   get hasScenes() { return !!(this.info && this.info.proto >= 6); }
   _sc(r) {
@@ -386,7 +409,9 @@ export class Editor {
       return Array.from({ length: 4 }, () => { const b = [q.b(), q.b(), q.b()], z = b.indexOf(0); return String.fromCharCode(...(z < 0 ? b : b.slice(0, z))); });
     };
     const nn = names(), sn = nn && names();
-    return { rc, ...now, names: nn, saved: { ...saved, names: sn } };
+    const four = () => (q.i + 4 > q.a.length ? null : [q.b(), q.b(), q.b(), q.b()]);   // (protocol 8: after the names)
+    const tn = nn && four(), ts = tn && four(), st = ts && four(), ss = st && four();   // (the tones, then the INPUT steps)
+    return { rc, ...now, names: nn, tones: tn, steps: st, saved: { ...saved, names: sn, tones: ts, steps: ss } };
   }
   async scenes() { return this._sc(await this.request(C.SCENE)); }
   async sceneRecall(n) { return this._sc(await this.request(C.SCENE, [1, n])); }          // (as CC 65 + n)
@@ -398,6 +423,11 @@ export class Editor {
     const t = cleanSceneName(text);
     return this._sc(await this.request(C.SCENE, [4, n, ...[0, 1, 2].map((i) => (i < t.length ? t.charCodeAt(i) : 0))]));
   }
+  // protocol 8: scene n's own GUITAR TONE (0: the preset's, 1..9: BRIGHT, NATURAL, SMOOTH, WARM, WARMER, PUNCHY, DARK, DARKER,
+  // MUDDY); a scene not stored is stored as things are. A change until SAVE
+  async sceneTone(n, tone) { return this._sc(await this.request(C.SCENE, [5, n, Math.max(0, Math.min(9, tone | 0))])); }
+  // protocol 8: scene n's INPUT step over the patch's INPUT (0 none, 1..7: SCENE_STEPS_DB); a change until SAVE
+  async sceneStep(n, step) { return this._sc(await this.request(C.SCENE, [6, n, Math.max(0, Math.min(7, step | 0))])); }
   async irTexts() {
     const b = this.cat.blocks.findIndex((x) => x.label === "CAB");
     const t = b < 0 ? -1 : this.cat.blocks[b].types.findIndex((x) => x && x.name === "USER IR");

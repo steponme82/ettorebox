@@ -39,8 +39,9 @@ is one request; `POST down` and `POST up` have the firmware's.
 
 `http://127.0.0.1:8766/` is the pedal: its front panel, drawn in code (`tools/sim/pedal.html`), with the live screen in
 the LCD. It works as the pedal does, through `POST down` and `POST up`: a button acts when the firmware's does, so hold
-HOME 0.7 s for the tuner (1.4 s for the diagnostics), press both footswitches together for the tuner, hold PARA 0.8 s
-for SAVE, click PARA twice for MOVE.
+HOME 0.7 s for the tuner (1.4 s for the diagnostics), press both footswitches together for the tuner (with `--fx`, the
+Bluetooth image's way since ettorebox beta 54: hold both 0.7 s for the tuner; let go sooner, the footswitches' next mode),
+hold PARA 0.8 s for SAVE, click PARA twice for MOVE.
 
 | Control | Mouse or touch | Keys |
 | --- | --- | --- |
@@ -154,7 +155,7 @@ before it is answered, so a state read right after a press shows the press.
 | `GET info` | `{kind: "pedal" \| "update", port, flash, controls, log}`; `port` is the MIDI port name, `null` when none |
 | `GET state` | the pedal's state (below) |
 | `POST press/NAME` | a control: `fs_up` `fs_dn` `fx` `home` `push` `mod` `amp` `cab` `dly` `rev`; `push_long` (hold PUSH: SAVE), `dpush` (double click PUSH: MOVE), `home_long` (hold HOME: tuner; on the tuner: diagnostics), `fx_long` (hold FX: MIDI), `feet` (both footswitches: tuner) |
-| `POST down/NAME`, `POST up/NAME` | a button goes down, comes up: `fs_up` `fs_dn` `fx` `home` `push` `mod` `amp` `cab` `dly` `rev`. Timed as the firmware does (`ui_buttons` in `firmware/ui.h`): HOME, PUSH and FX act at a short release, or after 0.7 s, 0.8 s and 0.8 s held (HOME held on as long again: the diagnostics); a PUSH click on the chain opens the block at once and a second one within 350 ms makes it MOVE; the others act when they go down; the second footswitch down within 150 ms of the first, while the first is held, takes the first one's step back and opens the tuner. A button already down, or not down, is left as it is |
+| `POST down/NAME`, `POST up/NAME` | a button goes down, comes up: `fs_up` `fs_dn` `fx` `home` `push` `mod` `amp` `cab` `dly` `rev`. Timed as the firmware does (`ui_buttons` in `firmware/ui.h`): HOME, PUSH and FX act at a short release, or after 0.7 s, 0.8 s and 0.8 s held (HOME held on as long again: the diagnostics); a PUSH click on the chain opens the block at once and a second one within 350 ms makes it MOVE; the others act when they go down; the second footswitch down within 150 ms of the first, while the first is held, takes the first one's step back and opens the tuner (with `--fx`: both up within 0.7 s, the footswitches' next mode; held 0.7 s, the tuner). A button already down, or not down, is left as it is |
 | `POST knob/N[?fast]` | the PARA knob N detents (negative: the other way); `fast` is the quick-turn step of 5 |
 | `POST volume/N` | the MASTER knob, 0..100 |
 | `POST battery/MV[/USB_MV]` | the battery voltage the screen shows; `USB_MV` above 4300 shows "USB" |

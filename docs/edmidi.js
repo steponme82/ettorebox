@@ -42,6 +42,9 @@ function tgtName(t) {
   return `${B.label} · ${p ? p.name : `setting ${t.k + 1}`}`;
 }
 const srcName = (s) => `CC ${s.cc} · ch ${s.ch}`;
+// ettorebox beta 54: the pedal's own footswitches, learned on it for STOMP (px_midi.h PXM_CC_FSL / FSR, never a controller's)
+const FOOT = { 126: "Left footswitch", 127: "Right footswitch" };
+const plSrc = (s) => FOOT[s] || `CC ${s}`;
 function pedalName(e) {                 // what a learned entry does, from the pedal's own number it is read as
   const t = pedalTarget(e.dst);
   if (!t) return `CC ${e.dst}`;
@@ -176,14 +179,19 @@ async function finishCatchHere(c) {
   renderMap();
 }
 async function savePmap(entries, each = pmap.each, inputDb = pmap.inputDb, tails = pmap.tails, btPower = pmap.btPower, outMode = pmap.outMode,
-  usb = pmap.usb, more = pmap.more) {
+  usb = pmap.usb, more = pmap.more, eq = pmap.eq) {
   try {
-    const r = await app.ed.setPedalMap(each, entries, inputDb, tails, btPower, outMode, usb, more);
+    const r = await app.ed.setPedalMap(each, entries, inputDb, tails, btPower, outMode, usb, more, eq);
     if (r.rc === 0) pmap = r; else say(r.rc === 2 ? "The pedal could not save it (flash)." : "The pedal refused it.", "err");
   } catch (e) { say(`Not changed: ${e.message}`, "err"); }
   renderMap();
 }
 const setMore = (k, v) => savePmap(pmap.entries, pmap.each, pmap.inputDb, pmap.tails, pmap.btPower, pmap.outMode, pmap.usb, { ...pmap.more, [k]: v });
+// (protocol 8, ettorebox beta 53) SETTINGS' EQ: the mid's frequencies and widths as the pedal steps them (firmware/px_midi.h)
+const EQ_HZ = [160, 200, 250, 315, 400, 500, 630, 800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000];
+const EQ_WIDTH = ["Very wide", "Wide", "Medium", "Narrow", "Very narrow"];
+const EQ_DB = Array.from({ length: 25 }, (_, i) => [i - 12, i === 12 ? "0 dB (flat)" : `${i > 12 ? "+" : ""}${i - 12} dB`]);
+const setEq = (k, v) => savePmap(pmap.entries, pmap.each, pmap.inputDb, pmap.tails, pmap.btPower, pmap.outMode, pmap.usb, pmap.more, { ...pmap.eq, [k]: v });
 async function loadPmap() {
   pmap = null;
   if (app.conn !== "ready" || !app.ed || !app.ed.hasPedalLearn) return;
@@ -325,8 +333,13 @@ function renderMap() {
       h("th", { scope: "row" }, h("i", { class: `led${p.on[b] ? " on" : ""}` }), h("span", { text: B.label }), h("small", { text: T.name })),
       h("td", {}, cell({ kind: "on", b, mode: "toggle" }, "On / off", ccOn(b), `flip ${ccToggle(b)}`)),
       h("td", {}, cell({ kind: "type", b }, "Type", ccType(b))),
-      Array.from({ length: NPAR }, (_, k) => h("td", {}, T.params[k] ? cell({ kind: "param", b, k }, T.params[k].name, ccParam(b, k))
-        : h("span", { class: "cc-cell none", title: `${T.name} has no setting ${k + 1}: the pedal stores CC ${ccParam(b, k)} and ignores it.` }, h("span", { class: "cc-n", text: "–" }), h("span", { class: "cc-c", text: `CC ${ccParam(b, k)}` })))));
+      Array.from({ length: NPAR }, (_, k) => {
+        // (test build 53, protocol 8: the GT block's GTR TONE + PICKUP and INPUT are set on the pedal or here, by no controller)
+        const setUp = T.params[k] && B.label === "GT" && k >= 3 && !!(app.ed && app.ed.hasInputPerPreset);
+        return h("td", {}, T.params[k] && !setUp ? cell({ kind: "param", b, k }, T.params[k].name, ccParam(b, k))
+          : h("span", { class: "cc-cell none", title: setUp ? `${T.params[k].name}: set on the pedal or in the Sound section, never by a controller (CC ${ccParam(b, k)} does nothing).`
+            : `${T.name} has no setting ${k + 1}: the pedal stores CC ${ccParam(b, k)} and ignores it.` }, h("span", { class: "cc-n", text: "–" }), h("span", { class: "cc-c", text: `CC ${ccParam(b, k)}` })));
+      }));
   });
   const learned = cfg.mappings;
   el.append(
@@ -422,6 +435,21 @@ function renderPmap() {
       sel("pmapvolat", "Where the expression pedal's volume acts", "volAt", [[0, "At the input, as the guitar's volume knob (AT INPUT)"], [1, "Before the delay and the reverb, the tone kept (BEFORE DLY)"]]),
       h("span", { class: "grow" }), h("span", { class: "dim small", text: "(SETTINGS, VOL PEDAL: CC 117's volume, and a two-job pedal's while its effect is off; the tails ring on)" })),
   ];
+  // (protocol 8, ettorebox beta 53) SETTINGS' EQ, over the whole guitar at the output, in every preset
+  const eqSel = (id, label, k, opts) => {
+    const e = h("select", { id, "aria-label": label, onchange: () => setEq(k, +e.value) }, opts.map(([v, t]) => h("option", { value: String(v), text: t })));
+    e.value = String(pmap.eq[k]);
+    return e;
+  };
+  const eqRows = pmap.eq && pmap.usb && mo && [
+    h("div", { class: "lrow" }, h("span", { text: "General EQ: bass and treble" }),
+      eqSel("pmapeqb", "General EQ bass, a shelf at 100 Hz", "bass", EQ_DB), eqSel("pmapeqt", "General EQ treble, a shelf at 3.5 kHz", "treble", EQ_DB),
+      h("span", { class: "grow" }), h("span", { class: "dim small", text: "(SETTINGS, EQ BASS and EQ TREBLE: shelves at 100 Hz and 3.5 kHz, over the whole guitar at the output, every preset; heard at once)" })),
+    h("div", { class: "lrow" }, h("span", { text: "General EQ: mid" }),
+      eqSel("pmapeqm", "General EQ mid", "mid", EQ_DB), eqSel("pmapeqf", "General EQ mid frequency", "freq", EQ_HZ.map((f, i) => [i, `at ${f} Hz`])),
+      eqSel("pmapeqw", "General EQ mid width", "width", EQ_WIDTH.map((t, i) => [i, t])),
+      h("span", { class: "grow" }), h("span", { class: "dim small", text: "(SETTINGS, EQ MID, EQ MID FREQ and EQ MID WIDTH: a peak or a dip where the room or the speaker needs it)" })),
+  ];
   const used = pmap.entries.map((e, i) => [e, i]).filter(([e]) => e);
   return h("div", { class: "learned", id: "pmap" },
     h("div", { class: "lrow" }, h("span", { text: "The flip numbers, CC 8 to 19, act" }), sw, h("span", { class: "grow" }),
@@ -441,6 +469,7 @@ function renderPmap() {
     u && h("div", { class: "lrow" }, h("span", { text: "USB audio: the guitar there" }), ug, h("span", { class: "grow" }),
       h("span", { class: "dim small", text: "(SETTINGS, GUITAR: cut, only the computer's sound goes on from there; the guitar comes back when the computer stops playing)" })),
     moreRows,
+    eqRows,
     used.length ? used.map(([e, i]) => {
       const t = pedalTarget(e.dst), isValue = e.mode === MAP_VALUE || (t && (t.kind === "param" || t.kind === "type" || t.kind === "exp" || t.kind === "master"));
       const mode = !isValue && h("select", { "aria-label": `How CC ${e.src} acts`, onchange: () => {
@@ -477,15 +506,16 @@ function renderPlist() {
         (e.clo !== e.chi && (e.clo !== 0 || e.chi !== 127)) && h("span", { class: "dim small", title: "Where the pedal was at the heel and at the toe while it was learned", text: `(CC ${e.clo} to ${e.chi})` }),
         vol && h("label", { class: "tick", title: "As a multi-effect's expression pedal with a toe switch: whatever turns the block on and off changes the pedal's job. Where the volume acts: Volume pedal, above." },
           vol, ` or VOLUME when ${blk(t.b).label} is off`)];
-    } else if (kind !== MAP_VALUE) {
+    } else if (kind !== MAP_VALUE && !FOOT[e.src]) {   // (beta 54: a footswitch of the pedal's own has nothing to choose)
       const m = h("select", { "aria-label": `How CC ${e.src} acts`, onchange: () => put({ mode: +m.value }) },
         h("option", { value: String(MAP_PRESS), text: "Press: 127, then 0 when let go" }), h("option", { value: String(MAP_EACH), text: "Each message is a press" }));
       m.value = String(kind === MAP_EACH ? MAP_EACH : MAP_PRESS);
       how = m;
     }
-    return h("div", { class: "lrow" }, h("span", { class: "chip", text: `CC ${e.src}` }), h("span", { class: "arrow", "aria-hidden": "true", text: "→" }),
+    const foot = FOOT[e.src] ? "The pedal's own footswitch, in STOMP (both footswitches change the mode). Forgetting it forgets all it switches in this preset." : null;
+    return h("div", { class: "lrow" }, h("span", { class: "chip", text: plSrc(e.src), title: foot }), h("span", { class: "arrow", "aria-hidden": "true", text: "→" }),
       h("b", { text: `${pedalName(e)}${two ? " +VOL" : ""}` }), h("span", { class: "grow" }), how,
-      h("button", { type: "button", class: "btn icon small", "aria-label": `Forget CC ${e.src} in this preset`,
+      h("button", { type: "button", class: "btn icon small", "aria-label": `Forget ${plSrc(e.src)} in this preset`,
         onclick: () => savePlist((slot) => app.ed.presetForget(slot, e.src)) }, icon("x")));
   });
   return h("div", { class: "learned", id: "plist" },

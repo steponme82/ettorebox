@@ -64,6 +64,7 @@ h1, h2, h3 { margin: 0; text-wrap: balance; }
 p { margin: 0; }
 a { color: var(--acc); text-underline-offset: 0.18em; }
 button, select, input { font: inherit; color: inherit; }
+html, body { touch-action: pan-x pan-y; }   /* (test build 53: no pinch or double-tap zoom, the page only scrolls) */
 button, a { touch-action: manipulation; }
 button, label[role="button"], .menu label { user-select: none; -webkit-user-select: none; cursor: pointer; }
 label[role="button"], .menu label { touch-action: manipulation; }
@@ -582,4 +583,5 @@ a.tone-u[href] { text-decoration: underline; }
 .sc-grid .sc-name { display: block; margin: 4px auto 0; inline-size: 6ch; min-block-size: 30px; padding-inline: 4px; text-align: center; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
 .sc-grid tbody th { text-align: start; border-inline-start: 3px solid var(--c); }
 .sc-grid input { inline-size: 20px; block-size: 20px; accent-color: var(--acc); }
+.sc-grid .sc-tone { min-block-size: 30px; padding-inline: 6px; font-size: 0.75rem; }   /* (test build 53: a scene's tone) */
 .sc-forget { display: flex; flex-wrap: wrap; gap: 6px; }

@@ -120,6 +120,7 @@ static void px_midi_in(uint32_t pkt, uint32_t ms, int free_ui, int *touched)
     mid_in_n++;                                        /* (the controller's own number: the MIDI page and the editor show it) */
     if (m.type == PXM_CC) {                            /* test build 39: a control learned on the pedal, as the pedal's own */
         uint32_t c = m.d1, v = m.d2;
+        if (c >= PXM_CC_FSL) return;                   /* (beta 54: 126 and 127 are the pedal's own footswitches, px_midi.h) */
         if (px_learn_feed(c, v)) return;               /* (test build 46: a learn on a block page takes it, not played) */
         if (!px_midi_map_in(&c, &v, cur_preset, &PRESET)) return;   /* (a switch's release; 51: the sound, a two-job pedal's job) */
         m.d1 = (uint8_t)c; m.d2 = (uint8_t)v;

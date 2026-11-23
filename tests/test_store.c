@@ -11,6 +11,14 @@
 #include "px_dsp.h"
 #include "../firmware/px_midi.h"
 #if PX_OWN_FX
+/* ettorebox beta 53: one biquad's gain in dB at f Hz (44.1 kHz), c = b0 b1 b2 a1 a2 (the EQ's test) */
+static double eq_db(const float *c, double f)
+{
+    const double w = 2.0 * 3.14159265358979 * f / 44100.0, c1 = cos(w), s1 = sin(w), c2 = cos(2.0 * w), s2 = sin(2.0 * w);
+    const double nr = c[0] + c[1] * c1 + c[2] * c2, ni = -(c[1] * s1 + c[2] * s2);
+    const double dr = 1.0 + c[3] * c1 + c[4] * c2, di = -(c[3] * s1 + c[4] * s2);
+    return 10.0 * log10((nr * nr + ni * ni) / (dr * dr + di * di));
+}
 static int a_in_gain_n;                                  /* test build 39: INPUT applied (px_audio.h's, counted here) */
 static void a_in_gain_apply(void) { a_in_gain_n++; }
 static int a_tails_n;                                    /* test build 40: TAILS to the engine (px_audio.h's, counted here) */
@@ -406,7 +414,7 @@ int main(void)
             for (uint32_t pu = 0; pu < 3u; pu++) for (uint32_t z = 1; z < PX_INZ_N; z++) {
                 float c[5];
                 px_pickup = (uint8_t)pu; px_inz = (uint8_t)z;
-                if (!px_inz_coefs(44117.6f, c)) { worst = 99; continue; }
+                if (!px_inz_coefs(44117.6f, px_inz, px_pickup, c)) { worst = 99; continue; }
                 for (double f = 100; f <= 8000; f *= 1.25) {
                     const double w = 2 * M_PI * f / 44117.6, L = PX_PU_L[pu], R = PX_PU_R[pu], C = PX_PU_C[pu], RL = PX_INZ_RL[z];
                     const double Ct = C * PX_INZ_CK[z];   /* (test build 47: BRIGHT, the cable's capacitance mostly gone) */
@@ -423,7 +431,7 @@ int main(void)
             printf("GUITAR TONE: the filter against the loaded pickup: %.2f dB at most up to 5 kHz, %.2f dB up to 8 kHz\n", worst5, worst);
             CHECK(worst5 < 0.6 && worst < 1.2, "GUITAR TONE: the filter is the loaded pickup's response (0.6 dB to 5 kHz, 1.2 dB to 8 kHz), every PICKUP and GUITAR TONE");
             px_inz = 0; px_pickup = 1;
-            { float c[5]; CHECK(!px_inz_coefs(44117.6f, c), "IN-Z: 1M is no filter at all (the input as it is)"); }
+            { float c[5]; CHECK(!px_inz_coefs(44117.6f, px_inz, px_pickup, c), "IN-Z: 1M is no filter at all (the input as it is)"); }
             px_inz = 3; px_pickup = 1;
             const int n0 = a_inz_n;
             CHECK(st_commit() == 0, "IN-Z: 90K, HUMBUCK, a commit");
@@ -526,6 +534,83 @@ int main(void)
             CHECK(px_sc_tab[9].set == 0u, "scenes: a copy without the record (builds before 49): none");
             memset(px_sc_tab, 0, sizeof px_sc_tab); px_live = 0; px_sc_rule = 0; px_sc_feet = 0;
             CHECK(st_commit() == 0, "scenes: cleared again");
+        }
+        {   /* test build 53: the scenes' INPUT steps ("OPSI", after the names), 3 bits a scene: kept through a power cycle,
+             * a slot reset to its factory sound loses its own, a record whose CRC fails is none, a copy without it (builds
+             * before 53) none; the bits of one preset never touch its neighbours' */
+            memset(px_si_tab, 0, sizeof px_si_tab);
+            px_si_put(0, 0xFFFu); px_si_put(1, 0x123u); px_si_put(51, 0xABCu);
+            CHECK(px_si_get(0) == 0xFFFu && px_si_get(1) == 0x123u && px_si_get(2) == 0u && px_si_get(50) == 0u && px_si_get(51) == 0xABCu,
+                  "scene steps: 12 bits a preset, side by side, none touching another");
+            CHECK(px_si_step(0x123u, 0) == 3u && px_si_step(0x123u, 1) == 4u && px_si_step(0x123u, 2) == 4u && px_si_step(0x123u, 3) == 0u && px_si_step(px_si_with(0, 3, 7), 3) == 7u,
+                  "scene steps: 3 bits a scene");
+            CHECK(st_commit() == 0, "scene steps: a commit");
+            memset(px_si_tab, 0, sizeof px_si_tab);
+            reboot();
+            CHECK(px_si_get(0) == 0xFFFu && px_si_get(1) == 0x123u && px_si_get(51) == 0xABCu, "scene steps: they survive a power cycle");
+            CHECK(st_reset(1) == 0, "scene steps: slot 1 back to its factory sound");
+            reboot();
+            CHECK(px_si_get(1) == 0u && px_si_get(0) == 0xFFFu && px_si_get(51) == 0xABCu, "scene steps: its slot reset, its steps go; the others stay");
+            nor[st_cur + ST_SI_OFF + 4u] ^= 0x01;
+            reboot();
+            CHECK(px_si_get(0) == 0u && px_si_get(51) == 0u && px_midi_map_count() == 2, "scene steps: a record whose CRC fails: none, the rest kept");
+            nor[st_cur + ST_SI_OFF + 4u] ^= 0x01;
+            memset(nor + st_cur + ST_SI_OFF, 0xFF, ST_SI_LEN);
+            reboot();
+            CHECK(px_si_get(51) == 0u, "scene steps: a copy without the record (builds before 53): none");
+            CHECK(ST_SI_OFF + ST_SI_LEN <= 0xF00u + 0x1000u, "scene steps: the record ends under the loader's area (0x1F00)");
+            memset(px_si_tab, 0, sizeof px_si_tab);
+            CHECK(st_commit() == 0, "scene steps: cleared again");
+        }
+        {   /* ettorebox beta 53: SETTINGS' EQ. Its filters: BASS a shelf at 100 Hz, MID a peak at MID FREQ, TREBLE a shelf at
+             * 3.5 kHz, each the dB asked where it acts and 0 dB far from it; the bands at 0 dB off. Its record ("OPEQ", after the
+             * scenes' INPUT steps): kept through a power cycle; a CRC that fails, a value out of range, a copy without it
+             * (the builds before): flat; it ends under the loader's area */
+            float c[15];
+            memcpy(px_eq, PX_EQ_FLAT, sizeof px_eq);
+            CHECK(px_eq_coefs(44100.0f, c) == 0u, "EQ: flat, no band on");
+            px_eq[PX_EQ_BASS] = 6; px_eq[PX_EQ_MID] = -6; px_eq[PX_EQ_FREQ] = 7; px_eq[PX_EQ_WIDTH] = 2; px_eq[PX_EQ_TREB] = 4;
+            CHECK(px_eq_coefs(44100.0f, c) == 7u, "EQ: BASS, MID and TREBLE on");
+            CHECK(fabs(eq_db(c, 20.0) - 6.0) < 0.3 && fabs(eq_db(c, 100.0) - 3.0) < 0.3 && fabs(eq_db(c, 5000.0)) < 0.3,
+                  "EQ: BASS +6 DB below 100 Hz, +3 at it, nothing at 5 kHz");
+            CHECK(fabs(eq_db(c + 5, 800.0) + 6.0) < 0.05 && fabs(eq_db(c + 5, 80.0)) < 0.5 && fabs(eq_db(c + 5, 8000.0)) < 0.5,
+                  "EQ: MID -6 DB at 800 Hz, nothing a few octaves away");
+            CHECK(fabs(eq_db(c + 10, 16000.0) - 4.0) < 0.3 && fabs(eq_db(c + 10, 3500.0) - 2.0) < 0.3 && fabs(eq_db(c + 10, 200.0)) < 0.1,
+                  "EQ: TREBLE +4 DB at the top, +2 at 3.5 kHz, nothing at 200 Hz");
+            px_eq[PX_EQ_WIDTH] = 4;
+            (void)px_eq_coefs(44100.0f, c);
+            const double narrow = eq_db(c + 5, 1100.0);
+            px_eq[PX_EQ_WIDTH] = 0;
+            (void)px_eq_coefs(44100.0f, c);
+            CHECK(narrow > -2.0 && eq_db(c + 5, 1100.0) < -4.5, "EQ: MID WIDTH, VERY NARROW to VERY WIDE, around 800 Hz");
+            CHECK(!px_eq_set(PX_EQ_BASS, 13) && !px_eq_set(PX_EQ_FREQ, 16) && !px_eq_set(PX_EQ_WIDTH, -1) && px_eq_set(PX_EQ_TREB, -12),
+                  "EQ: a value out of range is refused");
+            px_eq[PX_EQ_WIDTH] = 3; px_eq[PX_EQ_TREB] = 4;
+            CHECK(st_commit() == 0, "EQ: a commit");
+            memcpy(px_eq, PX_EQ_FLAT, sizeof px_eq);
+            reboot();
+            CHECK(px_eq[PX_EQ_BASS] == 6 && px_eq[PX_EQ_MID] == -6 && px_eq[PX_EQ_FREQ] == 7 && px_eq[PX_EQ_WIDTH] == 3 && px_eq[PX_EQ_TREB] == 4,
+                  "EQ: it survives a power cycle");
+            nor[st_cur + ST_EQ_OFF + 4u] ^= 0x01;
+            reboot();
+            CHECK(!memcmp(px_eq, PX_EQ_FLAT, sizeof px_eq) && px_midi_map_count() == 2, "EQ: a record whose CRC fails: flat, the rest kept");
+            nor[st_cur + ST_EQ_OFF + 4u] ^= 0x01;
+            reboot();
+            CHECK(px_eq[PX_EQ_BASS] == 6, "EQ: the record read again");
+            {
+                uint8_t *const r = nor + st_cur + ST_EQ_OFF;
+                r[4] = 25;                             /* (BASS +13 DB, with its CRC) */
+                const uint32_t k = ota_crc16(r + 4, PX_EQ_N, 0);
+                r[4u + PX_EQ_N] = (uint8_t)k; r[5u + PX_EQ_N] = (uint8_t)(k >> 8);
+                reboot();
+                CHECK(!memcmp(px_eq, PX_EQ_FLAT, sizeof px_eq), "EQ: a value no build writes: flat");
+            }
+            memset(nor + st_cur + ST_EQ_OFF, 0xFF, ST_EQ_LEN);
+            reboot();
+            CHECK(!memcmp(px_eq, PX_EQ_FLAT, sizeof px_eq), "EQ: a copy without the record (the builds before): flat");
+            CHECK(ST_EQ_OFF == ST_SI_OFF + ST_SI_LEN + 2u && ST_EQ_OFF + ST_EQ_LEN <= 0xF00u + 0x1000u,
+                  "EQ: the record after the scene steps, ending under the loader's area (0x1F00)");
+            CHECK(st_commit() == 0, "EQ: flat again");
         }
         {   /* test build 50: the scenes' names ("OPN1" presets 1-26, "OPN2" 27-52): a save writes the playing preset's, the
              * others go over untouched, a commit that is no save changes none, a FACTORY reset drops its own; a record whose

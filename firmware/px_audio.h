@@ -93,22 +93,91 @@ static volatile uint8_t a_res_sp;
 #if PX_OWN_FX
 /* test build 39: INPUT (px_midi.h px_in_db) as the input's scale: the interrupt reads one float, set from the main loop */
 static volatile float a_in_k = 0.5f / 8388608.0f;
-static void a_in_gain_apply(void) { a_in_k = (0.5f / 8388608.0f) * powf(10.0f, (float)px_in_db * 0.05f); }
 static void a_tails_apply(void) { px_engine_tails(&g_eng, px_tails); }   /* test build 40: TAILS (px_midi.h) */
 /* test build 46: IN-Z (px_midi.h px_inz, px_pickup, px_inz_coefs: the pickup loaded as an input of that impedance would load
  * it), one biquad over the input after INPUT. Off (1M): nothing done to the input, bit for bit */
 static volatile uint8_t a_inz_on;
 static float a_inz_c[5], a_inz_z[2];                   /* b0 b1 b2 a1 a2; the state (the interrupt's own) */
 static int a_running;                                  /* (defined below: the audio interrupt is on) */
-static void a_inz_apply(void)                          /* (the main loop: SETTINGS, the store at boot) */
+/* test build 53: the input the preset and the scene playing ask for (px_midi.h px_in_eff: the GT page's GTR TONE, PICKUP and
+ * INPUT, a scene's tone), SETTINGS' rows where they ask nothing. a_in_sync, every main-loop pass, looks for a change and glides
+ * to it in A_IN_GLIDE ms: the gain, and the filter's five coefficients in a straight line from the old set to the new (between
+ * two stable biquads the line stays stable: the stable (a1, a2) make a triangle), from or to no filter (1, 0, 0, 0, 0), which
+ * switches it off at the end. The interrupt reads what it always read. SETTINGS, the editor and the store at boot only ask for
+ * a look (a_in_gain_apply, a_inz_apply) */
+#define A_IN_GLIDE 24u
+static const float A_IN_ID[5] = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+static struct {
+    px_in_t at;                                        /* (the input glided to, or gliding to) */
+    uint8_t look, gliding, off_end;
+    uint32_t t0;
+    float k0, k1, c0[5], c1[5];
+} a_ins = {{0xFFu, 0xFFu, 0x7F}, 1u, 0u, 0u, 0u, 0.0f, 0.0f, {0}, {0}};
+static void a_in_gain_apply(void) { a_ins.look = 1; }
+static void a_inz_apply(void) { a_ins.look = 1; }
+static void a_inz_set(const float *c)                  /* (the interrupt reads the five as one set; at boot it is not on yet) */
 {
-    float c[5];
-    if (!px_inz_coefs(g_eng.sr, c)) { a_inz_on = 0; return; }
-    if (a_running) fm1_irq_mask(FM1_IRQ_ALNK0);         /* (the interrupt reads the five as one set; at boot it is not on yet) */
+    if (a_running) fm1_irq_mask(FM1_IRQ_ALNK0);
     for (int i = 0; i < 5; i++) a_inz_c[i] = c[i];
-    if (!a_inz_on) a_inz_z[0] = a_inz_z[1] = 0.0f;
-    a_inz_on = 1;
     if (a_running) fm1_irq_unmask(FM1_IRQ_ALNK0);
+}
+static void a_in_sync(uint32_t now, const px_preset_t *p, uint32_t scene_tone, int scene_db)
+{
+    const px_in_t w = px_in_eff(p, scene_tone, scene_db);
+    if (a_ins.look || w.inz != a_ins.at.inz || w.pickup != a_ins.at.pickup || w.db != a_ins.at.db) {
+        float c[5];
+        const int on = px_inz_coefs(g_eng.sr, w.inz, w.pickup, c);
+        a_ins.look = 0;
+        a_ins.k0 = a_in_k; a_ins.k1 = (0.5f / 8388608.0f) * powf(10.0f, (float)w.db * 0.05f);
+        for (int i = 0; i < 5; i++) { a_ins.c0[i] = a_inz_on ? a_inz_c[i] : A_IN_ID[i]; a_ins.c1[i] = on ? c[i] : A_IN_ID[i]; }
+        if (on && !a_inz_on) { a_inz_set(A_IN_ID); a_inz_z[0] = a_inz_z[1] = 0.0f; a_inz_on = 1; }   /* (from no filter) */
+        a_ins.off_end = (uint8_t)!on;
+        a_ins.at = w; a_ins.gliding = 1;
+        a_ins.t0 = a_running ? now : now - A_IN_GLIDE;  /* (at boot: at once) */
+    }
+    if (!a_ins.gliding) return;
+    const uint32_t e = now - a_ins.t0;
+    const float f = e >= A_IN_GLIDE ? 1.0f : (float)e * (1.0f / (float)A_IN_GLIDE);
+    a_in_k = a_ins.k0 + (a_ins.k1 - a_ins.k0) * f;
+    if (a_inz_on) {
+        float c[5];
+        for (int i = 0; i < 5; i++) c[i] = a_ins.c0[i] + (a_ins.c1[i] - a_ins.c0[i]) * f;
+        a_inz_set(c);
+    }
+    if (f >= 1.0f) { a_ins.gliding = 0; if (a_ins.off_end) a_inz_on = 0; }
+}
+#endif
+#if PX_OWN_FX
+/* ettorebox beta 53: SETTINGS' EQ (px_midi.h px_eq). The main loop designs its three filters (px_eq_coefs) and hands them over as
+ * the knobs are (a_eqpend, as audio_apply's a_kpend): dsp_out takes the set before the mutes (the bands' state kept: no click;
+ * a band gone flat cleared) and runs the bands not at 0 dB over the left, and STEREO's right (GTR+BASS's bass goes around it) */
+static float a_eqc[15], a_eqn[15], a_eqz[12];          /* the coefficients run, the next ones; the state (left, then right) */
+static volatile uint8_t a_eqpend;
+static uint8_t a_eqm, a_eqnm;                          /* the bands on (a bit each): as run, as designed */
+static uint32_t a_eqw = ~0u;                           /* (the settings designed last) */
+static void a_eq_sync(void)                            /* (main loop, every pass) */
+{
+    const uint32_t w = px_eq_pack();
+    if (w == a_eqw || a_eqpend) return;
+    a_eqw = w;
+    a_eqnm = (uint8_t)px_eq_coefs(g_eng.sr, a_eqn);
+    __asm__ volatile("" ::: "memory");                 /* (the set written before the flag) */
+    a_eqpend = 1;
+}
+static __attribute__((noinline)) void a_eq_run(float *z, float *b)   /* (RAM code, dsp_out's) the bands on, over a block */
+{
+    const float *c = a_eqc;
+    for (uint32_t k = 0; k < 3u; k++, c += 5, z += 2) {
+        if (!(a_eqm >> k & 1u)) continue;
+        const float b0 = c[0], b1 = c[1], b2 = c[2], a1 = c[3], a2 = c[4];
+        float z1 = z[0], z2 = z[1];
+        for (uint32_t i = 0; i < A_FR; i++) {
+            const float x = b[i], y = b0 * x + z1;
+            z1 = b1 * x - a1 * y + z2; z2 = b2 * x - a2 * y;
+            b[i] = y;
+        }
+        z[0] = z1; z[1] = z2;
+    }
 }
 #endif
 #if OP_BT_AUDIO
@@ -120,6 +189,12 @@ static volatile uint32_t a_en_s[5];                    /* the entries by the fla
 static int32_t a_res[A_FR];                            /* output, 24-bit right-aligned */
 #endif
 static volatile float a_lvl[2];                        /* input L / R: mean square, in 24-bit steps */
+#if PX_OWN_FX
+/* test build 53: the guitar's loudest at the converter since the main loop last looked, in 24-bit steps: the input check's
+ * (ui.h), which judges the level the chain gets from it and INPUT */
+static volatile float a_ipk;
+static float a_in_peak_take(void) { const float p = a_ipk * (1.0f / 8388608.0f); a_ipk = 0.0f; return p; }
+#endif
 /* input level in dB below full scale (dBFS), rounded; -199 = digital silence */
 static int a_level_db(int ch)
 {
@@ -249,6 +324,16 @@ static void dsp_out(void)                              /* a_out -> a_res: safety
 #endif
     if (a_nan) for (uint32_t i = 0; i < A_FR; i++) a_out[i] = 0.0f;
     if (a_mute) for (uint32_t i = 0; i < A_FR; i++) a_out[i] = 0.0f;
+#if PX_OWN_FX
+    if (a_eqpend) {                                    /* (ettorebox beta 53: SETTINGS' EQ, the set the main loop designed) */
+        for (uint32_t i = 0; i < 15u; i++) a_eqc[i] = a_eqn[i];
+        for (uint32_t i = 0; i < 12u; i++) if (!(a_eqnm >> (i % 6u >> 1) & 1u)) a_eqz[i] = 0.0f;   /* (a flat band: cleared) */
+        a_eqm = a_eqnm;
+        __asm__ volatile("" ::: "memory");             /* (the set read before the flag lets the main loop write the next) */
+        a_eqpend = 0;
+    }
+    if (a_eqm) { a_eq_run(a_eqz, a_out); if (a_mode == 1u) a_eq_run(a_eqz + 6, a_outr); }
+#endif
     {   /* tuner mute, with a short ramp both ways (no click) */
         float tg = a_tmute ? 0.0f : 1.0f;
         if (a_mg != tg) {
@@ -809,17 +894,24 @@ static void a_block(const uint8_t *data, int len)      /* a guitar block: its DS
     uint32_t n = (uint32_t)len / 8u;                   /* 2 32-bit words per frame */
     if (n > A_FR) n = A_FR;
     float sl = 0.0f, sr = 0.0f;
+#if PX_OWN_FX
+    float pk = 0.0f;                                   /* (test build 53: the block's loudest, for the input check) */
+#endif
     for (uint32_t i = 0; i < n; i++) {
         float l = (float)((int32_t)(s[2u * i] << 8) >> 8), r = (float)((int32_t)(s[2u * i + 1u] << 8) >> 8);
         sl += l * l; sr += r * r;
 #if PX_OWN_FX
         a_in[i] = l * a_in_k;                          /* (test build 39: x0.5 and INPUT, -10..+10 dB) */
+        pk = l > pk ? l : -l > pk ? -l : pk;
 #else
         a_in[i] = l * (0.5f / 8388608.0f);             /* guitar = L channel only (like the official fw); R carries
                                                           only noise (~ -77 dBFS, measured v26). x0.5: same level
                                                           as the old (L + R) / 2, settings are unchanged */
 #endif
     }
+#if PX_OWN_FX
+    if (pk > a_ipk) a_ipk = pk;
+#endif
 #if PX_OWN_FX
     if (a_inz_on) {                                    /* (test build 46: IN-Z, the pickup loaded) */
         float z1 = a_inz_z[0], z2 = a_inz_z[1];

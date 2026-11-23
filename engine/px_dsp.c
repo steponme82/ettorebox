@@ -44,6 +44,13 @@
 #define PX_HOT
 #define PX_INL
 #define PX_AINL __attribute__((always_inline))
+#if PX_OWN_FX && defined(__clang__)   /* ettorebox beta 54: what runs at a knob turn or a preset's load, not per sample, compiled
+                                       * for size in the Bluetooth image (its flash is full); the release and the host builds
+                                       * compile it as before */
+#define PX_SMALL __attribute__((minsize))
+#else
+#define PX_SMALL
+#endif
 #ifndef PX_RUNS
 #define PX_RUNS 1                                      /* v40.4: 0 = every block sample by sample, as before ("blocks over a run of
                                                           samples", below): the Bluetooth test image, whose flash is full
@@ -377,8 +384,15 @@ int px_order_valid(const uint8_t *o)
 }
 typedef struct { const char *name; uint8_t np; const char *const *pn; } tdef;
 
+#if PX_OWN_FX   /* test build 53: the GT page is the preset's input: its 4th setting holds GTR TONE and PICKUP (the tone + 10 x the
+                 * pickup, 0 each: SETTINGS' own), its 5th INPUT (0: SETTINGS', 1..21: -10..+10 dB). The gate never reads them:
+                 * firmware/px_midi.h px_in_eff does, before the chain. Every factory preset has 0 in both */
+static const char *const PN_GATE[] = {"THRESH", "RELEASE", "PRESET LVL", "GTR TONE", "INPUT"};
+static const tdef T_GATE[] = {{"NOISE GATE", 5, PN_GATE}};
+#else
 static const char *const PN_GATE[] = {"THRESH", "RELEASE", "PRESET LVL"};   /* (3rd: the preset's level, v36) */
 static const tdef T_GATE[] = {{"NOISE GATE", 3, PN_GATE}};
+#endif
 
 static const char *const PN_CMP[] = {"SUSTAIN", "ATTACK", "LEVEL", "MIX"};
 static const char *const PN_OPTO[] = {"COMPRESS", "LEVEL", "MIX"};
@@ -812,7 +826,7 @@ int px_type_v34(int blk, int old)
 /* v38: USER IR's LOW CUT 20..400 Hz and HIGH CUT 20 kHz (0: off) .. 2 kHz, logarithmic */
 static float ir_lo_hz(int v) { return 20.0f * powf(20.0f, (float)v * 0.01f); }
 static float ir_hi_hz(int v) { return 20000.0f * powf(0.1f, (float)v * 0.01f); }
-int px_param_text(int b, int t, int k, int v, char *buf)
+PX_SMALL int px_param_text(int b, int t, int k, int v, char *buf)
 {
     if (v < 0) v = 0;
     if (v > 100) v = 100;
@@ -967,7 +981,7 @@ int px_preset_count(void) { return NPRESETS; }
 #define NOGATE (p->on[PX_B_GATE] = 0)
 #define NAM(m, g, b, md, t) blk(p, PX_B_AMP, 1, PX_AMP_NAM, px_nam_knob(m), g, b, md, t)
 enum { M_TWIN, M_AC15, M_SUPER59, M_SHIRLCL, M_JCM900, M_SHIRLEY, M_JCM2000, M_MARK4, M_JVM, M_PROMOD, M_5150, M_6505 };
-void px_preset_factory(px_preset_t *p, int idx)
+PX_SMALL void px_preset_factory(px_preset_t *p, int idx)
 {
     base_preset(p);
     if (idx < 0 || idx >= NPRESETS) idx = 0;
@@ -3385,14 +3399,56 @@ static inline float lo_ap(float x, float c, float *xh, float *yh)   /* y = c (x 
 }
 #define LO_REF 0.1f                                    /* COMP brings the octave towards this level */
 #define LO_FLOOR 0.002f                                /* and stops raising it below this one (-54 dB) */
-static __attribute__((noinline)) float lo_fast(px_engine *e, float a)   /* (RAM code: firmware/build.sh RAM_DSP) */
+/* ettorebox beta 54: which arrow the octave halves. The tilt lets a chord's lowest note lead the phase, but from 60 Hz it
+ * also raised the mains' hum (and rumble, noise, a ringing open string) 30 to 100 dB over a high note: the octave's
+ * pitch jumped to the hum's, a 25 Hz rumble, while its level followed the note ("jumps in and out" on the top notes).
+ * Now the octave halves the band's own arrow, where the hum is 45 dB under the note, whenever the band holds one note
+ * from C3 up (under it, as before: the tilt cleans a low note's harmonics, and the hum never troubled those):
+ *  - one note: the band's arrow turns steadily (over 40 ms, its step wanders less than LO_BIN; a note's harmonics keep
+ *    step with it, a chord's notes beat). A pluck (the guitar 4 times its last 100 ms) starts the check afresh, so a
+ *    note is taken as one from its start (the octave is not late). The band's arrow on a bright pickup's low note can
+ *    ride its 2nd harmonic: then (the tilted arrow's note an octave under it, holding a share of the band) the tilted
+ *    arrow, the note's root;
+ *  - a chord: the tilted arrow, as before, while its note holds a share of the band (q > LO_QHI, kept down to LO_QLO),
+ *    else the band's (the tilted one then follows hum, rumble or noise);
+ *  - q, the share of the band in step with the tilted arrow: the band turned back by it, smoothed twice, its length
+ *    squared over the band's power, smoothed again (a chord's notes beat);
+ *  - a switch turns the new arrow onto the old one (lo_rr): the octave's phase never jumps.
+ * tests/engine/lowoct.c: plucked notes over hum, D3 to D5, no glitch while the note is within 12 dB of its peak (beta 53:
+ * 15 to 60 a second); chords as before, but for a high triad with no hum (its root's octave less often) */
+#define LO_QHI 0.03f
+#define LO_QLO 0.01f
+#define LO_QREF 0.05f                                  /* (a root under the band's arrow's 2nd harmonic: a share at least) */
+#define LO_BIN 0.045f                                  /* one note: the band's step wanders less than 4.5 %; no more: 6.5 % */
+#define LO_BOUT 0.065f
+#define LO_H2 0.05f
+#define LO_KLOW 0.1459f                                /* 128 Hz a sample at sr / 8: under it (E2 to B2) a note keeps the tilt */
+#define LO_ONS 4.0f                                    /* a pluck: the guitar's level 4 times its last 100 ms */
+#define LO_KS 0.02978f                                 /* smoothing at sr / 8: 6 ms */
+#define LO_KP 0.02242f                                 /* 8 ms */
+#define LO_KQ 0.00903f                                 /* 20 ms */
+#define LO_KSL 0.00452f                                /* 40 ms */
+#define LO_KENV 0.00181f                               /* 100 ms */
+#ifndef LO_GT0
+#define LO_GT0 0.08f                                   /* COMP's gate: shut while the band holds under 8 % of the guitar's level, */
+#endif
+#ifndef LO_GTW
+#define LO_GTW 0.12f                                   /* open from 20 % */
+#endif
+/* (RAM code: firmware/build.sh RAM_DSP. Compiled for size: it runs at sr / 8, and beta 54's choice doubled it) */
+static __attribute__((noinline)) PX_SMALL float lo_fast(px_engine *e, float a, float x0)
 {
     float ua = a, ub = a;                              /* the band's own level: its 90-degree pair, z's length */
     for (int i = 0; i < 4; i++) ua = lo_ap(ua, LO_HC[i], e->lo_bx[i], e->lo_by[i]);
     for (int i = 4; i < 8; i++) ub = lo_ap(ub, LO_HC[i], e->lo_bx[i], e->lo_by[i]);
-    const float A = sqrtf(ub * ub + e->lo_bd * e->lo_bd);
+    const float bre = ub, bim = e->lo_bd, Pb = bre * bre + bim * bim, A = sqrtf(Pb);
     e->lo_bd = ua;
     e->lo_amp += (A - e->lo_amp) * (A > e->lo_amp ? e->lo_aatk : e->lo_arel);
+    {   /* the guitar's level before RANGE: a pluck, and COMP's gate */
+        const float ax = x0 < 0.0f ? -x0 : x0;
+        e->lo_env += (ax - e->lo_env) * (ax > e->lo_env ? e->lo_aatk : e->lo_arel);
+        e->lo_envs += (e->lo_env - e->lo_envs) * LO_KENV;
+    }
     float t = a;                                       /* the tilt: the lowest note in the band leads the phase */
     for (int i = 0; i < e->lo_np; i++) { e->lo_t[i] += (t - e->lo_t[i]) * e->lo_tk; t = e->lo_t[i]; }
     float pa = t, pb = t;
@@ -3401,11 +3457,47 @@ static __attribute__((noinline)) float lo_fast(px_engine *e, float a)   /* (RAM 
     const float re = pb, im = e->lo_ad;                /* chain A a sample later: 90 degrees behind chain B */
     e->lo_ad = pa;
     const float m2 = re * re + im * im;
+    float wr = 0.0f, wi = 0.0f, br = 0.0f, bi = 0.0f;  /* the two arrows' directions */
+    if (m2 > 1e-20f) { const float n = 1.0f / sqrtf(m2); wr = re * n; wi = im * n; }
+    if (Pb > 1e-20f) { const float n = 1.0f / A; br = bre * n; bi = bim * n; }
+    e->lo_mt += (wi * e->lo_pr - wr * e->lo_pi - e->lo_mt) * LO_KS;   /* their steps: about the angle a sample */
+    e->lo_mb += (bi * e->lo_qr - br * e->lo_qi - e->lo_mb) * LO_KS;
+    e->lo_pr = wr; e->lo_pi = wi; e->lo_qr = br; e->lo_qi = bi;
+    e->lo_c1r += (bre * wr + bim * wi - e->lo_c1r) * LO_KS;          /* q: the band turned back by the tilted arrow */
+    e->lo_c1i += (bim * wr - bre * wi - e->lo_c1i) * LO_KS;
+    e->lo_c2r += (e->lo_c1r - e->lo_c2r) * LO_KS; e->lo_c2i += (e->lo_c1i - e->lo_c2i) * LO_KS;
+    e->lo_pb += (Pb - e->lo_pb) * LO_KP;
+    e->lo_qs += ((e->lo_c2r * e->lo_c2r + e->lo_c2i * e->lo_c2i) / (e->lo_pb + 1e-24f) - e->lo_qs) * LO_KQ;
+    const float q = e->lo_qs;
+    {   /* one note? */
+        if (e->lo_env > LO_ONS * e->lo_envs) { e->lo_mbs = e->lo_mb; e->lo_bj = 0.0f; }
+        e->lo_mbs += (e->lo_mb - e->lo_mbs) * LO_KSL;
+        const float dv = e->lo_mb > e->lo_mbs ? e->lo_mb - e->lo_mbs : e->lo_mbs - e->lo_mb;
+        e->lo_bj += (dv - e->lo_bj) * LO_KQ;
+        e->lo_one = e->lo_bj < (e->lo_one ? LO_BOUT : LO_BIN) * e->lo_mbs;
+    }
+    int src;
+    if (e->lo_one && e->lo_mb > LO_KLOW) {             /* one note, from C3 up: the band's arrow, unless it rides the 2nd */
+        const float h2 = e->lo_mb - 2.0f * e->lo_mt;   /* harmonic (a bright pickup's note): then the tilted one */
+        src = h2 < LO_H2 * e->lo_mb && h2 > -LO_H2 * e->lo_mb && q > LO_QREF;
+    } else src = q > (e->lo_src ? LO_QLO : LO_QHI);    /* a chord, or a low note: the tilted arrow, as before, unless a trace
+                                                        * leads it (the low strings never had the hum's trouble: the tilt
+                                                        * cleans their harmonics, the band's arrow would keep them) */
+    if (e->lo_rr * e->lo_rr + e->lo_ri * e->lo_ri < 0.5f) { e->lo_rr = 1.0f; e->lo_ri = 0.0f; }
+    if (src != e->lo_src) {                            /* a switch: turn the new arrow onto the old one (no jump) */
+        const float orr = src ? br : wr, oi = src ? bi : wi, nr = src ? wr : br, ni = src ? wi : bi;
+        const float tr = orr * e->lo_rr - oi * e->lo_ri, ti = orr * e->lo_ri + oi * e->lo_rr;
+        float rr = tr * nr + ti * ni, ri = ti * nr - tr * ni;
+        const float rn = rr * rr + ri * ri;
+        if (rn > 1e-6f) { const float n = 1.0f / sqrtf(rn); rr *= n; ri *= n; } else { rr = 1.0f; ri = 0.0f; }
+        e->lo_rr = rr; e->lo_ri = ri; e->lo_src = src;
+    }
+    const float sr_ = src ? wr : br, si_ = src ? wi : bi;
+    const float zr = sr_ * e->lo_rr - si_ * e->lo_ri, zi = sr_ * e->lo_ri + si_ * e->lo_rr;
     float hr = e->lo_hr, hi = e->lo_hi;
-    if (m2 > 1e-20f) {
-        const float inv = 1.0f / sqrtf(m2), wr = re * inv, wi = im * inv;
+    if (zr * zr + zi * zi > 0.25f) {                   /* (no arrow: the octave keeps its phase) */
         if (hr * hr + hi * hi < 0.5f) { hr = 1.0f; hi = 0.0f; }
-        const float gr = hr + wr * hr + wi * hi, gi = hi + wi * hr - wr * hi;   /* h + unit(z) conj(h) */
+        const float gr = hr + zr * hr + zi * hi, gi = hi + zi * hr - zr * hi;   /* h + unit(z) conj(h) */
         const float gn = gr * gr + gi * gi;
         if (gn > 1e-6f) { const float n = 1.0f / sqrtf(gn); hr = gr * n; hi = gi * n; }
     }
@@ -3414,6 +3506,10 @@ static __attribute__((noinline)) float lo_fast(px_engine *e, float a)   /* (RAM 
     if (e->lo_c > 0.0f) {                              /* COMP: amp^(1-c), towards LO_REF; closes below LO_FLOOR */
         amp *= powf(LO_REF / (amp > LO_FLOOR ? amp : LO_FLOOR), e->lo_c);
         if (e->lo_amp < LO_FLOOR) { const float x = e->lo_amp * (1.0f / LO_FLOOR); amp *= x * x; }
+        {   /* beta 54: a note above RANGE leaves only a trace in the band: COMP must not raise it into an octave */
+            const float r = e->lo_amp / (e->lo_env + 1e-9f), g = (r - LO_GT0) * (1.0f / LO_GTW);
+            amp *= g <= 0.0f ? 0.0f : g >= 1.0f ? 1.0f : g * g * (3.0f - 2.0f * g);
+        }
     }
     return amp * hr;
 }
@@ -5097,9 +5193,10 @@ PX_HOT void px_engine_part(px_engine *e, const float *in, float *out, int n, int
                     float a = bq_run(&e->lo_aa[1], bq_run(&e->lo_aa[0], x));
                     if (++e->lo_k >= PX_LO_DEC) {          /* every 8th sample: the low band at its own rate */
                         e->lo_k = 0;
+                        const float a0 = a;
                         for (int i = 0; i < 3; i++) a = bq_run(&e->lo_sel[i], a);
                         a = bq_run(&e->lo_hp, a);
-                        float v = lo_fast(e, a);
+                        float v = lo_fast(e, a, a0);
                         e->lo_y0 = e->lo_y1; e->lo_y1 = v;
                     }
                     float o = e->lo_y0 + (e->lo_y1 - e->lo_y0) * ((float)e->lo_k * (1.0f / (float)PX_LO_DEC));
