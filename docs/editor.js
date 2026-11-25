@@ -9,6 +9,7 @@ import { initSound } from "./edsound.js";
 import { initModels, loadAssets } from "./edmodels.js";
 import { initMidi } from "./edmidi.js";
 import { initScenes } from "./edscenes.js";
+import { initPhone } from "./edphone.js";
 
 let pingTimer = null, connecting = false, progress = 0;
 
@@ -217,7 +218,7 @@ function renderConnPop() {
 }
 
 // ---- start ----
-initPresets(); initSound(); initMidi(); initScenes();
+initPresets(); initSound(); initMidi(); initScenes(); initPhone();
 await initModels();
 on("view-go", (v) => setView(v));
 $("reconnect").onclick = connect;

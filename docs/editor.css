@@ -298,6 +298,10 @@ body[data-view="sound"] #view-sound, body[data-view="models"] #view-models, body
 .prm label { font-weight: 700; font-size: 0.875rem; letter-spacing: 0.03em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .prm .val { text-align: end; font-weight: 700; white-space: nowrap; }
 .prm select.choice { justify-self: start; min-inline-size: min(100%, 22ch); }
+/* ettorebox beta 55: TIME / RATE on a note value (the slider dimmed), the tempo row */
+.prm input[type=range].synced { opacity: 0.4; }
+.tempo-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.tempo-in { inline-size: 9ch; }
 .nudge { position: relative; display: grid; place-items: center; inline-size: 30px; block-size: 30px; border: 1px solid var(--line-soft); border-radius: 50%; background: transparent; color: var(--dim); }
 .nudge .ic { inline-size: 14px; block-size: 14px; }
 @media (hover: hover) and (pointer: fine) { .nudge:hover { background: var(--raised); color: var(--ink); } }
@@ -585,3 +589,99 @@ a.tone-u[href] { text-decoration: underline; }
 .sc-grid input { inline-size: 20px; block-size: 20px; accent-color: var(--acc); }
 .sc-grid .sc-tone { min-block-size: 30px; padding-inline: 6px; font-size: 0.75rem; }   /* (test build 53: a scene's tone) */
 .sc-forget { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* ---- phones (under 600 px wide): the Sound section one block a page, swiped (edphone.js) ----
+   The header on one line, the scenes, the chain, the pages, the preset's level; nothing scrolls but the pages sideways.
+   A fader is dragged up and down (touch-action pan-x: sideways is the page's), the level bar sideways. */
+.ph { display: none; }
+body.phone .ph { display: flex; flex-direction: column; gap: 8px; flex: 1; min-block-size: 0; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.ph input { -webkit-user-select: text; user-select: text; }
+body.phone #view-sound > :is(.chain-wrap, #hint, #scenes, #block), body.phone .plevel, body.phone #saveas { display: none !important; }
+body.phone:is([data-conn="ready"], [data-conn="lost"])[data-view="sound"] main {
+  display: flex; flex-direction: column; overflow: hidden;
+  padding-block: 8px calc(var(--tabs-h) + 8px + env(safe-area-inset-bottom, 0px)); }
+body.phone:is([data-conn="ready"], [data-conn="lost"])[data-view="sound"] #view-sound { display: flex; flex-direction: column; gap: 8px; flex: 1; min-block-size: 0; inline-size: 100%; }
+body.phone .phead { flex-wrap: nowrap; gap: 8px; margin-block-end: 0; }
+body.phone .num, body.phone #name { font-size: 1.25rem; }
+body.phone .pname { flex: 1 1 auto; min-inline-size: 0; flex-wrap: nowrap; }
+body.phone #name { min-inline-size: 0; }
+body.phone .pacts { flex: none; flex-wrap: nowrap; margin-inline-start: 0; }
+body.phone .pacts .btn:not(.icon) { flex: none; }
+.ph-lab { font-size: 0.6875rem; font-weight: 800; letter-spacing: 0.06em; color: var(--dim); text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* the scenes: tap one to play it; its dots are its blocks, in the chain's order */
+.ph-scenes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) 44px; gap: 6px; }
+.ph-sc { display: grid; justify-items: center; align-content: center; gap: 4px; min-block-size: 44px; padding: 4px 2px; border: 1px solid var(--line); border-radius: var(--r);
+  background: var(--raised); font-weight: 800; font-size: 0.8125rem; letter-spacing: 0.02em; color: var(--dim); white-space: nowrap; overflow: hidden; }
+.ph-sc.on { border-color: var(--acc); background: color-mix(in oklch, var(--acc) 18%, var(--raised)); color: var(--acc); }
+.ph-sc.empty { border-style: dashed; color: var(--faint); }
+.ph-dots { display: flex; gap: 1.5px; }
+.ph-dots i { inline-size: 4px; block-size: 4px; border-radius: 50%; background: var(--line); }
+.ph-dots i.on { background: var(--c); }
+.ph-scedit { display: grid; place-items: center; min-block-size: 44px; padding: 0; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); color: var(--dim); }
+/* the chain: a block's page */
+.ph-strip { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 3px; }
+.ph-chip { block-size: 30px; padding: 0; border: 1px solid var(--line-soft); border-radius: 5px; background: var(--raised); color: var(--faint);
+  font-size: 0.59375rem; font-weight: 800; letter-spacing: 0.02em; overflow: hidden; }
+.ph-chip.on { background: var(--c); border-color: var(--c); color: oklch(0.16 0.02 150); }
+.ph-chip.cur { outline: 2px solid var(--ink); outline-offset: 1px; }
+/* the pages */
+.ph-pager { flex: 1; min-block-size: 0; display: flex; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; scrollbar-width: none; }
+.ph-pager::-webkit-scrollbar { display: none; }
+.ph-page { flex: 0 0 100%; scroll-snap-align: start; scroll-snap-stop: always; display: flex; flex-direction: column; gap: 8px; min-block-size: 0;
+  overflow-y: auto; overscroll-behavior-y: contain; padding-block: 2px 4px; }
+.ph-head { display: flex; align-items: center; gap: 10px; min-block-size: 40px; }
+.ph-name { font-size: 1.125rem; font-weight: 800; letter-spacing: 0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ph-pos { font-size: 0.75rem; color: var(--faint); white-space: nowrap; margin-inline-end: auto; }
+.ph-page .type button { min-block-size: 46px; font-size: 1.5rem; }
+.ph-page .type select { min-block-size: 46px; font-size: 1.125rem; }
+.ph-in { display: grid; grid-template-columns: 5.5em repeat(4, minmax(0, 1fr)); gap: 6px; align-items: center; }
+.ph-in button { min-block-size: 34px; padding: 0; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); font-weight: 800; font-size: 0.75rem; color: var(--faint); }
+.ph-in button[aria-pressed="true"] { background: var(--bc, var(--c)); border-color: var(--bc, var(--c)); color: oklch(0.16 0.02 150); }
+.ph-in button.now { box-shadow: inset 0 -3px 0 var(--acc); }
+.ph-row { display: grid; grid-template-columns: 5.5em minmax(0, 1fr); gap: 8px; align-items: center; }
+.ph-row select { inline-size: 100%; min-block-size: 42px; }
+.ph-row .seg { justify-self: stretch; display: flex; }
+.ph-row .seg button { flex: 1; min-block-size: 42px; padding-inline: 6px; }
+.ph-sync { grid-template-columns: 5.5em minmax(0, 1fr) 4.6em auto; }
+.ph-bpm { inline-size: 100%; min-block-size: 42px; padding-inline: 8px; border: 1px solid var(--line); border-radius: var(--r); background: var(--raised); font-weight: 700; }
+/* a block's settings: faders side by side */
+.ph-faders { flex: 1; min-block-size: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 8px; }
+.ph-fd { display: grid; grid-template-rows: auto 36px minmax(96px, 1fr) 36px auto; gap: 6px; min-block-size: 0; }
+.ph-v { font-weight: 800; font-size: 0.875rem; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color 0.12s; }
+.held .ph-v { color: var(--acc); }
+.ph-l { text-align: center; font-size: 0.6875rem; font-weight: 800; letter-spacing: 0.06em; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ph-step { display: grid; place-items: center; padding: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink);
+  font-size: 1.25rem; font-weight: 600; line-height: 1; touch-action: manipulation; -webkit-touch-callout: none; }
+.ph-step:active { background: var(--hover); }
+.ph-track { position: relative; overflow: hidden; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--raised); touch-action: pan-x; cursor: ns-resize; }
+.ph-fill { position: absolute; inset: auto 0 0; background: var(--c); }
+.ph-mark { position: absolute; inset-inline: 0; block-size: 2px; margin-block-end: -1px; background: var(--ink); opacity: 0.55; pointer-events: none; }
+.ph-fine { position: absolute; inset-block-start: 4px; inset-inline-end: 6px; font-size: 0.625rem; font-weight: 800; letter-spacing: 0.06em; color: var(--ink); opacity: 0; transition: opacity 0.15s; pointer-events: none; }
+.fine .ph-fine { opacity: 0.85; }
+.ph-fd.synced .ph-fill { opacity: 0.35; }
+/* the preset's level, at the bottom */
+.ph-dock { padding-block-start: 8px; border-block-start: 1px solid var(--line-soft); }
+.ph-line { --c: var(--acc); display: grid; grid-template-columns: 5.5em 44px minmax(0, 1fr) 44px; gap: 8px; block-size: 48px; }
+.ph-lv { display: grid; align-content: center; gap: 2px; min-inline-size: 0; }
+.ph-lv .ph-v { font-size: 1rem; text-align: start; }
+.ph-line .ph-track { touch-action: pan-y; cursor: ew-resize; }
+.ph-line .ph-fill { inset: 0 auto 0 0; }
+.ph-line .ph-mark { inset-block: 0; inset-inline: auto; inline-size: 2px; block-size: auto; margin: 0 0 0 -1px; }
+/* a scene at a time, in a dialog */
+.ph-scdlg .ph-dh { display: flex; align-items: center; gap: 10px; padding: 18px 20px 0; }
+.ph-scdlg .ph-dh h2 { flex: 1; padding: 0; }
+.ph-sctabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; padding: 12px 20px 0; }
+.ph-sctabs button { min-block-size: 42px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); font-weight: 800; font-size: 0.8125rem; color: var(--dim); }
+.ph-sctabs button[aria-selected="true"] { border-color: var(--ink); background: var(--raised); color: var(--ink); }
+.ph-sctabs button.now { box-shadow: inset 0 -3px 0 var(--acc); }
+.sc-form { display: grid; gap: 12px; }
+.sc-row { display: grid; grid-template-columns: 7em minmax(0, 1fr); gap: 8px; align-items: center; font-weight: 700; font-size: 0.875rem; color: var(--dim); }
+.sc-row select, .sc-row input { inline-size: 100%; min-block-size: 44px; }
+.sc-row .sc-name { text-transform: uppercase; letter-spacing: 0.12em; font-weight: 800; }
+.sc-sub { font-size: 0.8125rem; color: var(--dim); }
+.sc-blocks { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.sc-blocks button { min-block-size: 42px; padding: 0; border: 1px solid var(--line-soft); border-radius: 6px; background: var(--raised); font-size: 0.75rem; font-weight: 800; color: var(--faint); }
+.sc-blocks button[aria-pressed="true"] { background: var(--c); border-color: var(--c); color: oklch(0.16 0.02 150); }
+.sc-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.sc-acts .btn.primary { flex: 1; }
+@media (prefers-reduced-motion: reduce) { .ph-v, .ph-fine { transition: none; } }

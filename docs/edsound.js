@@ -6,7 +6,7 @@ import { app, $, h, icon, on, emit, blk, blockIndex, typeOf, choices, act, menu,
 import { save, saveAs, revert, exportOne, setCompare, comparing, duplicate, moveTo, restoreFactory } from "./edpresets.js";
 import { knobIndex, indexKnob, KINDS } from "./pxlib.js";
 import { t3kLink } from "./pxt3k.js";
-import { TONES, PICKUPS, GT_TONE_K, gtTone, gtPickup, gtPack } from "./pxedit.js";
+import { TONES, PICKUPS, GT_TONE_K, gtTone, gtPickup, gtPack, NOTES, syncTop, noteName, usesNotes } from "./pxedit.js";
 
 let dragging = null;
 
@@ -93,9 +93,9 @@ function renderHeader() {
 // On the pedal it is the GT page's third line (PRESET LVL: the gate block's setting 3, engine/px_dsp.c PX_PATCH_LEVEL):
 // -15..+15 dB in steps of 0.3 dB, 50 = 0 dB, applied whether the gate is on or off. Few players look for it in the noise
 // gate, so the header shows it too. The same setting: moving either moves the other.
-const LVL_K = 2;
+export const LVL_K = 2;
 const gateBlock = () => (app.cat ? blockIndex("GT") : -1);
-function levelText(v) {
+export function levelText(v) {
   const b = gateBlock(), P = b >= 0 && app.st ? typeOf(app.st.preset, b).params[LVL_K] : null, t = P && P.texts && P.texts[v];
   if (t) return t.replace(/\s*DB$/i, " dB");
   const d = (v - 50) * 0.3;
@@ -207,7 +207,7 @@ function startDrag(e, el, b) {
 // ---- the block editor ----
 // protocol 8 (test build 53): the GT block's 4th setting holds the guitar's tone and its pickup (tone + 10 x pickup, 0 each:
 // the SETTINGS page's), shown as the pedal shows them: two rows, GTR TONE and PICKUP. Its 5th, INPUT, is a list from the catalogue
-const gtSplit = (b, k) => k === GT_TONE_K && b === blockIndex("GT") && !!(app.ed && app.ed.hasInputPerPreset);
+export const gtSplit = (b, k) => k === GT_TONE_K && b === blockIndex("GT") && !!(app.ed && app.ed.hasInputPerPreset);
 function gtRows(box, b, k) {
   const pack = () => gtPack(+$("p3t").value, +$("p3p").value);
   const row = (id, label, names, title) => {
@@ -218,8 +218,49 @@ function gtRows(box, b, k) {
   row("p3t", "GTR TONE", TONES, "This preset's guitar tone (SETTINGS: the SETTINGS page's GUITAR TONE)");
   row("p3p", "PICKUP", PICKUPS, "The pickup this preset's tone assumes (SETTINGS: the SETTINGS page's PICKUP)");
 }
+// ettorebox beta 55 (protocol 9): TIME and RATE free (the slider) or a note value against the tempo; the tempo, typed or tapped
+export const notesOn = (b, t) => !!(app.ed && app.ed.hasTempo) && syncTop(b, t, 0) > 100;
+function noteRow(box, b, t) {
+  const top = syncTop(b, t, 0);
+  const ctl = h("select", { id: "p0n", class: "choice", title: "Free: the slider sets it. A note value follows the tempo",
+    onchange: () => { sendParam(b, 0, +ctl.value || 50); renderPage(); } },
+    h("option", { value: 0, text: "Free (the slider)" }), NOTES.slice(0, top - 100).map((n, i) => h("option", { value: 101 + i, text: n })));
+  box.append(h("div", { class: "prm one" }, h("label", { for: "p0n", text: "NOTE" }), ctl));
+}
+const taps = [];
+export async function setTempo(bpm, downbeat) {
+  if (!app.ed || !(bpm >= 30 && bpm <= 300)) return;
+  const r = await app.ed.tempo(Math.round(bpm * 10) / 10, downbeat);
+  if (app.st && r.rc === 0) { app.st.tempo = r.tempo; app.st.own = r.own; showTempo(); }
+}
+export function tapTempo() { tap(); }               // (edmidi.js: a switch learned in this page as Tap tempo)
+function tap() {                                    // as the pedal's: 200 ms to 2 s apart, the last three intervals averaged
+  const t = performance.now();
+  if (taps.length && (t - taps[taps.length - 1] > 2000)) taps.length = 0;
+  if (taps.length && t - taps[taps.length - 1] < 200) return;
+  taps.push(t); if (taps.length > 4) taps.shift();
+  if (taps.length < 2) return;
+  const iv = taps.slice(1).map((x, i) => x - taps[i]);
+  setTempo(60000 / (iv.reduce((a, x) => a + x, 0) / iv.length), true);
+}
+function tempoRow(box) {
+  const inp = h("input", { type: "number", id: "tempo", min: 30, max: 300, step: 0.1, inputmode: "decimal", class: "tempo-in",
+    "aria-label": "Tempo in BPM", onchange: () => setTempo(+inp.value, false) });
+  box.append(h("div", { class: "prm one" }, h("label", { for: "tempo", text: "TEMPO" }),
+    h("div", { class: "tempo-ctl" }, inp, h("span", { class: "dim", text: "BPM" }),
+      h("button", { type: "button", class: "btn small", text: "TAP", title: "Tap the beat: two taps set the tempo", onclick: tap }),
+      h("span", { id: "tempo-own", class: "dim" }))));
+}
+function showTempo() {
+  const inp = $("tempo"), own = $("tempo-own");
+  if (!inp || !app.st || app.st.tempo === undefined) return;
+  if (document.activeElement !== inp) inp.value = (Math.round(app.st.tempo * 10) / 10).toString();
+  const p = app.st.preset, keep = usesNotes(p) && Math.round(app.st.tempo) !== Math.round(app.st.own || 0);
+  own.textContent = app.st.own ? `saved with the preset: ${app.st.own} BPM${keep ? "; SAVE keeps this one" : ""}`
+    : usesNotes(p) ? "SAVE keeps it with the preset" : "";
+}
 // the options of a setting that is a choice; the MODEL and IR settings count the pedal's slots (two can share a name)
-function paramChoices(b, t, k, param) {
+export function paramChoices(b, t, k, param) {
   for (const kind of ["nam", "ir"]) {
     const ref = app.refs[kind];
     if (ref && b === ref.b && t === ref.t && k === 0 && param.texts) {
@@ -232,7 +273,7 @@ function paramChoices(b, t, k, param) {
   }
   return choices(param);
 }
-const optionOf = (opts, v) => opts.find((o) => o.index !== undefined ? knobIndex(v, opts.length) === o.index : v >= o.lo && v <= o.hi) || opts[0];
+export const optionOf = (opts, v) => opts.find((o) => o.index !== undefined ? knobIndex(v, opts.length) === o.index : v >= o.lo && v <= o.hi) || opts[0];
 
 function renderPage(fromPush) {
   const b = app.focus, B = blk(b), p = app.st.preset, T = typeOf(p, b), is = !!p.on[b];
@@ -277,7 +318,7 @@ function renderPage(fromPush) {
         else ctl.append(...opts.map(opt));
       } else {
         ctl = h("input", { type: "range", id, min: 0, max: 100, step: 1 });
-        ctl.oninput = () => { showVal(k); sendParam(b, k, +ctl.value); };
+        ctl.oninput = () => { sendParam(b, k, +ctl.value); showVal(k); };   // (beta 55: the value first: a note value left)
         ctl.onpointerdown = () => { ctl.dataset.held = "1"; };
         ctl.onpointerup = ctl.onpointercancel = () => { delete ctl.dataset.held; };
       }
@@ -288,7 +329,9 @@ function renderPage(fromPush) {
         h("label", { for: range || ctl.tagName === "SELECT" ? id : null, text: param.name }),
         range && step(-1), ctl, range && step(1),
         range && h("output", { class: "val", for: id })));
+      if (k === 0 && range && notesOn(b, p.type[b])) noteRow(box, b, p.type[b]);
     });
+    if (T.params.length && notesOn(b, p.type[b])) tempoRow(box);
     if (!T.params.length) box.append(h("p", { class: "dim", text: "This type has no settings." }));
     box.dataset.sig = sig;
   }
@@ -296,15 +339,26 @@ function renderPage(fromPush) {
     if (gtSplit(b, k)) { const v = p.p[b][k]; $("p3t").value = gtTone(v); $("p3p").value = gtPickup(v); return; }
     const c = $(`p${k}`), v = p.p[b][k];
     if (c.type === "range") { if (!(fromPush && (c.dataset.held || (document.activeElement === c && pendingParam)))) c.value = v; }
+    if (k === 0 && $("p0n")) $("p0n").value = v > 100 && v <= syncTop(b, p.type[b], 0) ? v : 0;   // (beta 55)
     else if (c.tagName === "SELECT") { const o = optionOf(paramChoices(b, p.type[b], k, T.params[k]), v); c.value = o.value; }
     showVal(k);
   });
+  showTempo();
   renderNote();
 }
 function showVal(k) {
   const c = $(`p${k}`), b = app.focus, p = app.st.preset, param = typeOf(p, b).params[k];
   if (!c || !param) return;
   if (c.type === "range") {
+    const raw = p.p[b][k], note = k === 0 && raw > 100 && raw <= syncTop(b, p.type[b], 0) ? noteName(raw) : "";
+    c.classList.toggle("synced", !!note);
+    if (note) {                                     // (beta 55: a note value: its name; the slider at its end, dimmed)
+      const out = c.parentElement.querySelector(".val");
+      out.textContent = note;
+      c.style.setProperty("--p", "100%");
+      c.setAttribute("aria-valuetext", `${note}, against the tempo`);
+      return;
+    }
     const v = +c.value, t = param.texts && param.texts[v];
     const out = c.parentElement.querySelector(".val");
     out.textContent = t || String(v);
@@ -356,8 +410,9 @@ export function initSound() {
   $("revert").onclick = () => revert();
   $("compare").onclick = () => setCompare(!comparing());
   $("pmore").onclick = (e) => {
-    const s = app.st.slot, narrow = matchMedia("(max-width: 899px)").matches, cmp = comparing();
+    const s = app.st.slot, narrow = matchMedia("(max-width: 899px)").matches, cmp = comparing(), phone = matchMedia("(max-width: 599px)").matches;
     menu(e.currentTarget, [
+      phone && { label: "Save as…", run: () => saveAs() },
       narrow && { label: cmp ? "Back to my changes" : "Compare with the saved preset", run: () => setCompare(!cmp), disabled: !app.st.dirty && !cmp, why: "Nothing was changed." },
       narrow && { label: "Revert", run: () => revert(), disabled: !app.st.dirty && !cmp, why: "Nothing was changed." },
       narrow && "-",

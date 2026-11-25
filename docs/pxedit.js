@@ -10,7 +10,7 @@ const H = [0x7D, 0x4F, 0x50];
 export const C = { INFO: 1, CAT_BLOCK: 2, CAT_TYPE: 3, TEXTS: 4, STATE: 5, SET: 6, ORDER: 7, NAME: 8, PUT: 9, SELECT: 10,
   FOCUS: 11, LIST: 12, SLOT_GET: 13, SLOT_PUT: 14, COMMIT: 15, SAVE: 16, WATCH: 17, PING: 18,
   NAM_LIST: 19, NAM_WRITE: 20, NAM_COMMIT: 21, NAM_ERASE: 22, DIAG: 23, IR_LIST: 24, IR_WRITE: 25, IR_COMMIT: 26, IR_ERASE: 27,
-  USB_AUDIO: 28, MIDI_IN: 29, MAP: 30, NAM_RENAME: 31, PL: 32, SCENE: 33 };
+  USB_AUDIO: 28, MIDI_IN: 29, MAP: 30, NAM_RENAME: 31, PL: 32, SCENE: 33, TEMPO: 34 };
 export const NAM_CHUNK = 112;     // bytes per NAM_WRITE (firmware/px_models.h NM_CHUNK)
 // test build 50: a scene's name as the pedal keeps it: 3 characters of ASCII 32..126 at most, in capitals as the pedal draws them
 export const cleanSceneName = (s) => String(s ?? "").toUpperCase().replace(/[^\x20-\x7E]/g, "").trim().slice(0, 3).trim();
@@ -26,6 +26,24 @@ export const gtPack = (tone, pickup) => (tone | 0) + 10 * (pickup | 0);
 // a scene's INPUT step over its patch's INPUT: 0 none, then these dB (firmware/px_midi.h PX_SI_DB)
 export const SCENE_STEPS_DB = [0, -6, -3, 3, 6, 9, 12, 15];
 export const P_SIZE = 110;
+// ettorebox beta 55 (protocol 9): TIME (DLY, every type) and RATE (MOD's CE CHORUS, FLANGER, PHASE 90, SMALL STONE, UNI-VIBE, the
+// three tremolos, VIBRATO; SFX's LFO WAH, SLICER's step) go on past 100 into note values against the tempo, 101 = 1/16 ...
+// (engine/px_dsp.h PX_NV_N). syncTop: the setting's top, 100 or 100 + the note values it takes (px_sync_top's)
+export const NOTES = ["1/16", "1/8T", "1/8", "1/4T", "1/8.", "1/4", "1/4.", "1/2", "1 BAR", "2 BARS", "4 BARS"];
+export const B_SFX = 3, B_MOD = 8, B_DLY = 9;
+const MOD_SYNC = new Set([0, 2, 3, 4, 5, 6, 7, 8, 10]);        // (not DIMENSION, 1, nor ROTARY, 9)
+export function syncTop(b, t, k) {
+  if (k !== 0) return 100;
+  if (b === B_DLY) return 108;
+  if (b === B_MOD) return MOD_SYNC.has(t) ? 111 : 100;
+  if (b === B_SFX) return t === 1 ? 111 : t === 4 ? 106 : 100;
+  return 100;
+}
+// a note value its model plays: SAVE then keeps the tempo with the preset (firmware/px_store.h st_tempo)
+export const usesNotes = (q) => [B_DLY, B_MOD, B_SFX].some((b) => q.p[b] && q.p[b][0] > 100 && q.p[b][0] <= syncTop(b, q.type[b], 0));
+export const noteName = (v) => NOTES[v - 101] || "";
+const validBpm = (x) => Number.isFinite(x) && x >= 30 && x <= 300;
+const bpm10 = (bpm) => { const v = validBpm(bpm) ? Math.round(bpm * 10) : 0; return [v & 0x7F, (v >> 7) & 0x7F]; };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function fail(code, msg) { const e = new Error(msg); e.code = code; return e; }
 
@@ -48,20 +66,23 @@ export function decodePreset(b, nblk = 12, npar = 5) {
   const order = [...b.slice(i, i + nblk)];
   return { name, on, type, p, order };
 }
-export function encodePreset(q, nblk = 12, npar = 5) {
+export function encodePreset(q, nblk = 12, npar = 5, notes = false) {   // notes: the pedal takes note values (protocol 9)
   const out = [];
   const nm = cleanName(q.name);
   for (let i = 0; i < 14; i++) out.push(i < nm.length ? nm.charCodeAt(i) : 0);
   for (let k = 0; k < nblk; k++) out.push(q.on[k] ? 1 : 0);
   for (let k = 0; k < nblk; k++) out.push(q.type[k] & 0x7F);
-  for (let k = 0; k < nblk; k++) for (let j = 0; j < npar; j++) out.push(Math.max(0, Math.min(100, q.p[k][j] | 0)));
+  for (let k = 0; k < nblk; k++) for (let j = 0; j < npar; j++) {
+    out.push(Math.max(0, Math.min(notes && j === 0 && (k === B_DLY || k === B_MOD || k === B_SFX) ? 111 : 100, q.p[k][j] | 0)));
+  }
   for (let k = 0; k < nblk; k++) out.push(q.order[k] & 0x7F);
   return out;
 }
 export function cleanName(s, max = 13) {
   return String(s || "").replace(/[^\x20-\x7E]/g, "?").slice(0, max);
 }
-export const clonePreset = (q) => ({ name: q.name, on: [...q.on], type: [...q.type], p: q.p.map((r) => [...r]), order: [...q.order] });
+export const clonePreset = (q) => ({ name: q.name, on: [...q.on], type: [...q.type], p: q.p.map((r) => [...r]), order: [...q.order],
+  tempo: q.tempo || 0 });                                       // (protocol 9: its own tempo in BPM, 0 none)
 
 export class Editor {
   constructor(access, opts = {}) {
@@ -204,8 +225,14 @@ export class Editor {
   _state(args) {
     const r = new Reader(args);
     const slot = r.b(), flags = r.b(), focus = r.b();
-    return { slot, dirty: !!(flags & 1), saved: !!(flags & 2), focus, preset: decodePreset(r.bytes(P_SIZE), this.info.nblk, this.info.npar) };
+    const st = { slot, dirty: !!(flags & 1), saved: !!(flags & 2), focus, preset: decodePreset(r.bytes(P_SIZE), this.info.nblk, this.info.npar) };
+    if (this.hasTempo) {                                        // protocol 9: the tempo playing, the slot's own (0 none)
+      st.tempo = this._bpm(r); st.own = this._bpm(r);
+      st.preset.tempo = usesNotes(st.preset) ? Math.round(st.tempo) : 0;   // (what SAVE would keep)
+    }
+    return st;
   }
+  _bpm(r) { const lo = r.b(), hi = r.b(); return (lo | hi << 7) / 10; }
   async state() { return this._state(await this.request(C.STATE)); }
   async set(block, what, k, v) { const r = await this.request(C.SET, [block, what, k, v]); return r[3]; }
   setParam(block, k, v) { return this.set(block, 0, k, v); }
@@ -213,7 +240,11 @@ export class Editor {
   setType(block, t) { return this.set(block, 2, 0, t); }
   async order(order) { return (await this.request(C.ORDER, order))[0]; }
   async name(s) { return new Reader(await this.request(C.NAME, [...cleanName(s, this.info.nameMax)].map((c) => c.charCodeAt(0)).concat([0]))).s(); }
-  async put(q) { return (await this.request(C.PUT, encodePreset(q, this.info.nblk, this.info.npar)))[0]; }
+  async put(q) {                                                 // (protocol 9: its tempo, if it has one, plays)
+    const a = encodePreset(q, this.info.nblk, this.info.npar, this.hasTempo);
+    if (this.hasTempo && validBpm(q.tempo)) a.push(...bpm10(q.tempo));
+    return (await this.request(C.PUT, a))[0];
+  }
   async select(slot) { return (await this.request(C.SELECT, [slot]))[1]; }
   async focus(block) { await this.request(C.FOCUS, [block]); }
 
@@ -230,12 +261,15 @@ export class Editor {
   async slotGet(slot) {
     const r = new Reader(await this.request(C.SLOT_GET, [slot]));
     r.b(); const saved = !!r.b();
-    return { slot, saved, preset: decodePreset(r.bytes(P_SIZE), this.info.nblk, this.info.npar) };
+    const preset = decodePreset(r.bytes(P_SIZE), this.info.nblk, this.info.npar);
+    preset.tempo = this.hasTempo ? Math.round(this._bpm(r)) : 0;  // (protocol 9: the slot's own tempo, 0 none)
+    return { slot, saved, preset };
   }
   // q null: back to the factory preset. commit: write the flash now
   async slotPut(slot, q, commit) {
     const args = [slot, (q ? 1 : 0) | (commit ? 2 : 0)];
-    if (q) args.push(...encodePreset(q, this.info.nblk, this.info.npar));
+    if (q) args.push(...encodePreset(q, this.info.nblk, this.info.npar, this.hasTempo));
+    if (q && this.hasTempo) args.push(...bpm10(q.tempo));        // (protocol 9: its tempo, 0 none)
     return (await this.request(C.SLOT_PUT, args, commit ? 4000 : this.timeout))[1];
   }
   async commit() { return (await this.request(C.COMMIT, [], 4000))[0]; }
@@ -383,6 +417,15 @@ export class Editor {
   // protocol 8 (test build 53): the GT page is the preset's input (its 4th setting: the guitar's tone + 10 x the pickup, 0 each
   // SETTINGS'; its 5th: INPUT, 0 SETTINGS', 1..21 -10..+10 dB), and each scene has a tone of its own (sceneTone)
   get hasInputPerPreset() { return !!(this.info && this.info.proto >= 8); }
+  // protocol 9 (ettorebox beta 55): note values (syncTop), the tempo in STATE and the presets, TEMPO. tempo(): the one playing;
+  // tempo(bpm, downbeat): set it (30..300, a tenth of a BPM), downbeat: the beat falls now (the TAP button)
+  // -> { rc (0 ok, 1 out of range), tempo (BPM playing), own (the preset's as its slot keeps it, 0 none) }
+  get hasTempo() { return !!(this.info && this.info.proto >= 9); }
+  async tempo(bpm, downbeat) {
+    const r = new Reader(await this.request(C.TEMPO, bpm === undefined ? [] : [...bpm10(bpm), downbeat ? 1 : 0]));
+    const rc = r.b();
+    return { rc, tempo: this._bpm(r), own: this._bpm(r) };
+  }
   _pl(r) {
     const q = new Reader(r), rc = q.b(), slot = q.b(), used = q.b(), places = q.b(), n = q.b(), entries = [];
     for (let i = 0; i < n; i++) entries.push({ src: q.b(), dst: q.b(), mode: q.b(), lo: q.b(), hi: q.b(), clo: q.b(), chi: q.b() });
@@ -445,6 +488,7 @@ export function presetToJSON(q, cat, slot) {
     slot: slot === undefined ? undefined : slot + 1,
     v: 36,                                                       // v36 (preset LEVEL); v35 scales (delay TIME up to 2 s)
     name: q.name,
+    tempo: validBpm(q.tempo) ? q.tempo : undefined,               // (ettorebox beta 55: its own tempo, BPM)
     blocks: cat.blocks.map((b, i) => ({ block: b.label, on: !!q.on[i], type: b.types[q.type[i]] ? b.types[q.type[i]].name : q.type[i], params: [...q.p[i]] })),
     order: q.order.map((i) => cat.blocks[i] ? cat.blocks[i].label : i),
   };
@@ -462,6 +506,7 @@ export const dlyTimeV35 = (v) => Math.min(80, Math.floor(v * (9.8 / 12.25) + 0.5
 export function presetFromJSON(o, cat, base) {
   const q = clonePreset(base), warn = [];
   q.name = cleanName(o.name || q.name);
+  q.tempo = validBpm(Number(o.tempo)) ? Math.round(Number(o.tempo)) : 0;   // (beta 55: its own tempo, else none)
   const byLabel = new Map(cat.blocks.map((b, i) => [b.label, i]));
   for (const ob of Array.isArray(o.blocks) ? o.blocks : []) {
     const i = byLabel.get(ob.block);
@@ -477,7 +522,7 @@ export function presetFromJSON(o, cat, base) {
     q.type[i] = t;
     if (Array.isArray(ob.params)) for (let k = 0; k < q.p[i].length; k++) {
       const v = Number(ob.params[k]);
-      if (Number.isFinite(v)) q.p[i][k] = Math.max(0, Math.min(100, Math.round(v)));
+      if (Number.isFinite(v)) q.p[i][k] = Math.max(0, Math.min(syncTop(i, t, k), Math.round(v)));   // (beta 55: a note value kept)
     }
     if (!(o.v >= 36) && ob.block === "GT") q.p[i][2] = 50;           // before v36: no preset LEVEL (0 dB)
     if (!(o.v >= 35) && ob.block === "DLY" && cat.blocks[i].types[q.type[i]] && cat.blocks[i].types[q.type[i]].name !== "REVERSE") {

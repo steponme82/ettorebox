@@ -77,6 +77,7 @@ export function action(m, value, ctx) {
   if (t.kind === "type") return { do: "type", b: t.b, t: typeFromCc(value, ctx.ntypes(t.b)) };
   if (t.kind === "preset") return press ? { do: "preset", step: t.step } : null;
   if (t.kind === "scene") return press ? { do: "scene", n: t.n } : null;
+  if (t.kind === "tap") return press ? { do: "tap" } : null;       // (ettorebox beta 55: a tap of the tempo)
   return null;
 }
 
@@ -96,7 +97,8 @@ export function cleanMappings(list) {
      (m.tgt.kind === "on" && int(m.tgt.b, 0, NBLK - 1) && (m.tgt.mode === "follow" || m.tgt.mode === "toggle")) ||
      (m.tgt.kind === "type" && int(m.tgt.b, 0, NBLK - 1)) ||
      (m.tgt.kind === "preset" && (m.tgt.step === 1 || m.tgt.step === -1)) ||
-     (m.tgt.kind === "scene" && int(m.tgt.n, 0, SCENES - 1))));
+     (m.tgt.kind === "scene" && int(m.tgt.n, 0, SCENES - 1)) ||
+     m.tgt.kind === "tap"));
 }
 
 // ---- test build 39 (editor protocol 5, the Bluetooth audio image): controls learned ON THE PEDAL ----
@@ -115,6 +117,7 @@ export function pedalDst(tgt) {
   if (tgt.kind === "param") return { dst: ccParam(tgt.b, tgt.k), value: true };
   if (tgt.kind === "type") return { dst: ccType(tgt.b), value: true };
   if (tgt.kind === "scene") return { dst: CC_SCENE0 + tgt.n, value: false };
+  if (tgt.kind === "tap") return { dst: CC_TAP, value: false };     // (ettorebox beta 55: CC 116, a tap of the tempo)
   return null;
 }
 // what one of the pedal's own numbers does: ccTarget's, or { kind: "next" | "prev" | "pad" | "tap" | "exp" }, or

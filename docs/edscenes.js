@@ -6,7 +6,7 @@
 // build 50 a scene has a name of up to 3 characters, typed here only: the pedal shows it in place of SCENE n. Since test build
 // 53 (protocol 8) a guitar tone of its own, over the preset's (the GT page's GTR TONE, else the SETTINGS page's).
 
-import { app, $, h, fill, on, blk, say } from "./edcore.js";
+import { app, $, h, fill, on, emit, blk, say } from "./edcore.js";
 import { setOn } from "./edsound.js";
 import { refreshState } from "./edpresets.js";
 import { cleanSceneName, TONES, SCENE_STEPS_DB } from "./pxedit.js";
@@ -44,7 +44,9 @@ function toggle(n, b) {
   change(() => app.ed.sceneSet(n, maskOf(n) ^ (1 << b)));
 }
 
-function render() {
+// drawn again: here, and on a phone (edphone.js, which hears "scenes")
+function render() { draw(); emit("scenes"); }
+function draw() {
   const el = $("scenes");
   if (!el) return;
   el.textContent = "";
@@ -113,6 +115,33 @@ function grid(order) {
     h("div", { class: "sc-forget" }, Array.from({ length: N }, (_, n) => n).filter((n) => stored(n) && n !== sc.cur).map((n) =>
       h("button", { type: "button", class: "btn small", text: `Forget scene ${n + 1}`, title: "Not stored any more: recalled, it takes the blocks as they are",
         onclick: () => change(() => app.ed.sceneForget(n)) }))));
+}
+
+// ---- for the phone's Sound section (edphone.js): the same scenes, one at a time ----
+export const scenesNow = () => (sc && app.conn === "ready" && app.st ? sc : null);
+export const sceneTitle = (n) => title(n);
+export const sceneShort = (n) => (sc && sc.names && sc.names[n]) || String(n + 1);
+export const sceneMask = (n) => maskOf(n);
+export const sceneKnown = (n) => n === sc.cur || stored(n);
+export function recallScene(n) { if (sc && n !== sc.cur) change(() => app.ed.sceneRecall(n)); }
+export function toggleScene(n, b) { if (sc) toggle(n, b); }
+// one scene: its name, guitar tone and INPUT step, its blocks (the scene playing: the blocks as they are), play, forget
+export function sceneForm(n) {
+  if (!sc || !app.st) return null;
+  const order = app.st.preset.order, playing = n === sc.cur, known = playing || stored(n), m = maskOf(n);
+  return h("div", { class: "sc-form" },
+    sc.names && h("label", { class: "sc-row" }, h("span", { text: "Name" }), nameField(n)),
+    sc.tones && h("label", { class: "sc-row" }, h("span", { text: "Guitar tone" }), toneField(n)),
+    sc.steps && h("label", { class: "sc-row" }, h("span", { text: "Input" }), stepField(n)),
+    h("p", { class: "sc-sub", text: playing ? "Its blocks: the scene playing is the blocks as they are now." : known ? "Its blocks:"
+      : "Not stored yet: played, it takes the blocks as they are. Setting a block stores it." }),
+    h("div", { class: "sc-blocks", role: "group", "aria-label": `Blocks in ${title(n)}` }, order.map((b) => h("button", { type: "button",
+      style: `--c:${blk(b).color}`, "aria-pressed": known && (m >> b) & 1 ? "true" : "false", text: blk(b).label,
+      "aria-label": `${blk(b).name} in ${title(n)}`, onclick: () => toggle(n, b) }))),
+    !playing && h("div", { class: "sc-acts" },
+      h("button", { type: "button", class: "btn primary", text: `Play ${title(n)}`, onclick: () => change(() => app.ed.sceneRecall(n)) }),
+      stored(n) && h("button", { type: "button", class: "btn", text: "Forget it", title: "Not stored any more: played, it takes the blocks as they are",
+        onclick: () => change(() => app.ed.sceneForget(n)) })));
 }
 
 export function initScenes() {

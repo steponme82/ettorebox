@@ -4,7 +4,7 @@
 // passes on to the pedal as editor commands while it is open; and a monitor of what arrives. docs/MIDI.md, docs/pxmidi.js.
 
 import { app, $, h, icon, on, emit, blk, typeOf, slotName, say, confirmDialog, fwLabel } from "./edcore.js";
-import { sendParam, setOn, setType } from "./edsound.js";
+import { sendParam, setOn, setType, tapTempo } from "./edsound.js";
 import { selectPreset, stepPreset, refreshState } from "./edpresets.js";
 import { decode, ccParam, ccOn, ccToggle, ccType, ccTarget, resolve, action, learn, cleanMappings, sameTgt, NPAR,
   pedalDst, pedalTarget, pedalLearn, switchMode, PEDAL_MAP_N, MAP_PRESS, MAP_EACH, MAP_VALUE, SCENES, presetEntry,
@@ -34,6 +34,7 @@ function saveCfg() { try { localStorage.setItem(KEY, JSON.stringify(cfg)); } cat
 // ---- names ----
 function tgtName(t) {
   if (t.kind === "preset") return t.step > 0 ? "Next preset" : "Previous preset";
+  if (t.kind === "tap") return "Tap tempo";
   if (t.kind === "scene") return `Scene ${t.n + 1}`;
   const B = blk(t.b);
   if (t.kind === "on") return `${B.label} on / off`;
@@ -111,6 +112,7 @@ function fromController(input, data) {
     else if (a.do === "type") { if (a.t !== app.st.preset.type[a.b]) setType(a.b, a.t); }
     else if (a.do === "preset") stepPreset(a.step, { ask: false });
     else if (a.do === "scene" && app.ed && app.ed.hasScenes) app.ed.sceneRecall(a.n).then(() => refreshState()).catch(() => { });
+    else if (a.do === "tap" && app.ed && app.ed.hasTempo) tapTempo();
   }
 }
 // ---- what a controller sent the pedal (protocol 5: MIDI_IN, pushed while watched) ----
@@ -292,7 +294,7 @@ function renderConn() {
         h("button", { type: "button", class: "btn small", id: "uabtn", text: ua.on ? "Turn off" : "Turn on", onclick: uaToggle }))),
     ua && h("p", { class: "dim", id: "uanote", text: "With USB audio on, the pedal is also a USB sound card, with no driver to install (stereo, 16 bit, 44.1 kHz). The computer records the pedal's sound, and what the computer plays comes out of the pedal's output." }),
     h("p", { class: "dim" }, "The pedal's own MIDI settings are on the pedal: ", h("b", { text: "hold FX for 0.8 s" }),
-      pmap ? ` (SETTINGS) for CHANNEL (OMNI or 1 to 16), SEND and CLOCK > DELAY. SWITCH, INPUT, TAILS, BT POWER, OUTPUT${pmap.more ? `, GUITAR TONE, PICKUP, PLAY VIEW${app.ed.hasTwoJobs ? ", the two scene rows and VOL PEDAL" : " and the two scene rows"}` : ""} are also under Controls below; the editor cannot read or change the first three. `
+      pmap ? ` (SETTINGS) for CHANNEL (OMNI or 1 to 16), SEND and CLOCK > ${app.ed.hasTempo ? "TEMPO" : "DELAY"}. SWITCH, INPUT, TAILS, BT POWER, OUTPUT${pmap.more ? `, GUITAR TONE, PICKUP, PLAY VIEW${app.ed.hasTwoJobs ? ", the two scene rows and VOL PEDAL" : " and the two scene rows"}` : ""} are also under Controls below; the editor cannot read or change the first three. `
         : " for CHANNEL (OMNI or 1 to 16), SEND and CLOCK > DELAY. The editor cannot read or change them. ",
       h("a", { href: "https://github.com/isod89/openpocket/blob/main/docs/MIDI.md", target: "_blank", rel: "noopener" }, "The MIDI reference ", icon("ext"))));
 }
@@ -320,6 +322,12 @@ function renderMap() {
     const tgt = { kind: "preset", step }, on_ = learning && sameTgt(learning, tgt), got = learnedFor(tgt);
     return h("button", { type: "button", class: `btn small${on_ ? " learning" : ""}`, "data-t": `preset:${step}`, "aria-pressed": on_ ? "true" : "false", onclick: () => startLearn(tgt) },
       on_ ? "Press a switch…" : `${step > 0 ? "Next" : "Previous"} preset${got.length ? `: ${got.map((m) => srcName(m.src)).join(", ")}` : ""}`);
+  };
+  // (protocol 9, ettorebox beta 55) a switch to tap the tempo
+  const tapBtn = () => {
+    const tgt = { kind: "tap" }, on_ = learning && sameTgt(learning, tgt), got = learnedFor(tgt);
+    return h("button", { type: "button", class: `btn small${on_ ? " learning" : ""}`, "data-t": "tap", "aria-pressed": on_ ? "true" : "false", onclick: () => startLearn(tgt) },
+      on_ ? "Press a switch…" : `Tap tempo${got.length ? `: ${got.map((m) => srcName(m.src)).join(", ")}` : ""}`);
   };
   // (protocol 6, test build 49) a switch to recall one of the preset's scenes
   const sceneBtn = (n) => {
@@ -354,6 +362,7 @@ function renderMap() {
       h("span", { class: "grow" }),
       stepBtn(-1), stepBtn(1),
       app.ed.hasScenes && Array.from({ length: SCENES }, (_, n) => sceneBtn(n)),
+      app.ed.hasTempo && tapBtn(),
       h("label", { class: "check" }, pc, " Program Change loads presets")),
     h("p", { class: `learnstate${learning || catching ? " on" : ""}`, id: "learnstate", role: "status", text: learning
       ? `Waiting for a control for ${tgtName(learning)}: ${pmap ? "press a switch of the footswitch linked to the pedal, or " : ""}move a knob or press a switch on your controller${heard.size || pmap ? "" : " (none is connected yet)"}. Esc stops.` : learnt }),
