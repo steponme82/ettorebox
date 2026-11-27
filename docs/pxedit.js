@@ -433,7 +433,11 @@ export class Editor {
   }
   async presetMap(slot) { return this._pl(await this.request(C.PL, [slot])); }
   async presetPut(slot, e) { return this._pl(await this.request(C.PL, [slot, 1, e.src, e.dst, e.mode, e.lo, e.hi, e.clo, e.chi], 4000)); }
-  async presetForget(slot, src) { return this._pl(await this.request(C.PL, [slot, 2, src], 4000)); }
+  // hold (ettorebox beta 55, a fourth byte): true forgets only src's HOLD entry, false only its other one; left out, both. A
+  // pedal before beta 55 has one entry a control and takes no fourth byte: leave it out there
+  async presetForget(slot, src, hold) {
+    return this._pl(await this.request(C.PL, [slot, 2, src, ...(hold === true ? [1] : hold === false ? [0] : [])], 4000));
+  }
   // protocol 6 (test build 49): the playing preset's four scenes (firmware/px_midi.h px_sc), each the blocks it turns on (a
   // bit each, in the catalogue's block order). The scene playing is the blocks as they are now. Nothing here writes the
   // flash: SAVE keeps them with the sound, as on the pedal.

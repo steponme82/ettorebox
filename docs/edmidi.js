@@ -7,8 +7,8 @@ import { app, $, h, icon, on, emit, blk, typeOf, slotName, say, confirmDialog, f
 import { sendParam, setOn, setType, tapTempo } from "./edsound.js";
 import { selectPreset, stepPreset, refreshState } from "./edpresets.js";
 import { decode, ccParam, ccOn, ccToggle, ccType, ccTarget, resolve, action, learn, cleanMappings, sameTgt, NPAR,
-  pedalDst, pedalTarget, pedalLearn, switchMode, PEDAL_MAP_N, MAP_PRESS, MAP_EACH, MAP_VALUE, SCENES, presetEntry,
-  PL_DUAL, plKind, dualOk, dualDefault } from "./pxmidi.js";
+  pedalDst, pedalTarget, pedalLearn, PEDAL_MAP_N, MAP_PRESS, MAP_EACH, MAP_VALUE, SCENES, presetEntry,
+  PL_DUAL, plKind, dualOk, dualDefault, MAP_HOLD, isHold, holdDst, switchJobs, pressMode } from "./pxmidi.js";
 
 const KEY = "openpocket-midi-v1";
 let cfg = { mappings: [], pc: true };
@@ -59,7 +59,18 @@ function pedalName(e) {                 // what a learned entry does, from the p
   if (t.kind === "toggle") return `${blk(t.b).label} on / off`;
   return tgtName(t);
 }
-const MODE_TEXT = ["flips on the press (the switch sends 127, then 0 when let go)", "flips at each message (the switch alternates 127 and 0)", "follows the value"];
+const MODE_TEXT = ["flips on the press (the switch sends 127, then 0 when let go)", "flips at each message (the switch alternates 127 and 0)", "follows the value",
+  "acts when the switch is held 0.6 s (a short press does the switch's other job, when let go)"];
+// what a refusal means (hold: the request had a hold in it, which a pedal before beta 55 refuses)
+function refusal(r, hold) {
+  if (r.rc === 2) return "The pedal could not save it (flash): try again.";
+  if (r.rc === 3) return `The pedal keeps ${r.places} controls learned for single presets, all presets together: forget one first.`;
+  return hold ? "The pedal refused the hold: this firmware has no HOLD yet. Nothing changed." : "The pedal refused it.";
+}
+const hasHoldIn = (entries) => entries.some((e) => e && isHold(e.mode));
+// (beta 55) a firmware before it, put back on the pedal, forgets a preset's holds alone, but every preset's table whole when it
+// has one: said where a hold goes into every preset (edlive.js too)
+export const DOWNGRADE = "Going back to a firmware before beta 55 forgets all controls learned for every preset when one of them is a hold.";
 // what a message means to the pedal itself (its fixed map), in this preset's words
 function pedalMeaning(m) {
   if (m.type === "pc") return m.program < app.slots.length ? `preset ${slotName(m.program)} ${app.slots[m.program].name}` : "no such preset";
@@ -119,29 +130,58 @@ function fromController(input, data) {
 function fromPedalIn(x) {
   if (app.conn !== "ready") return;
   const m = x.type === "pc" ? { type: "pc", program: x.n1 } : { type: "cc", cc: x.n1, value: x.n2 };
-  if (catching) { if (m.type === "cc" && m.cc === catching.src) catching.values.push(m.value); return; }
+  emit("midiin", m);                                   // (the phone's LIVE page: the button just pressed, the pedal moved)
+  if (catching) {
+    if (m.type === "cc" && m.cc === catching.src) {
+      catching.values.push(m.value); catching.times.push(performance.now());
+      if (catching.waiting && m.value < 64) finishCatch();   // (beta 55: a switch held past the window, let go now)
+    }
+    return;
+  }
   if (m.type === "cc" && learning && pmap) { startCatch(m); return; }
-  const own = m.type === "cc" && plist && plist.entries.find((y) => y.src === m.cc);
-  const e = own || (m.type === "cc" && pmap && pmap.entries.find((y) => y && y.src === m.cc));
-  note("Controller on the pedal", m, e ? `→ ${pedalName(e)}${own && own.mode & PL_DUAL ? " +VOL" : ""} (learned on the pedal${own ? `, in ${slotName(plist.slot)}` : ""})` : pedalMeaning(m), e ? "hit" : "pedal");
+  // (beta 55) a switch's press and its hold, each the preset's own, else the pedal's for every preset (pxmidi.js switchJobs)
+  const j = m.type === "cc" ? switchJobs(m.cc, plist && plist.entries, pmap && pmap.entries) : null;
+  if (!j || !j.learned) { note("Controller on the pedal", m, pedalMeaning(m), "pedal"); return; }
+  const does = [j.press ? `→ ${pedalName(j.press)}${j.press.mode & PL_DUAL ? " +VOL" : ""}` : `a press: ${pedalMeaning(m)}`, j.hold && `held: ${pedalName(j.hold)}`];
+  note("Controller on the pedal", m, `${does.filter(Boolean).join("; ")} (learned on the pedal${j.own ? `, in ${slotName(plist.slot)}` : ""})`, "hit");
 }
 function startCatch(m) {
   const tgt = learning, d = pedalDst(tgt);
   learning = null;
   // (protocol 6: "only in this preset" is the preset's own table on the pedal; a step to another preset works in every one)
   const slot = scope === "preset" && tgt.kind !== "preset" && plist && app.ed.hasPresetLearn ? app.st.slot : null;
-  catching = { tgt, src: m.cc, values: [m.value], timer: 0, slot };
+  catching = { tgt, src: m.cc, values: [m.value], times: [performance.now()], timer: 0, slot, waiting: false };
   if (!d || d.value) { finishCatch(); return; }   // a knob or a pedal: its value counts, nothing to wait for
   learnt = `Heard CC ${m.cc} from the controller on the pedal: let go of the switch…`;
   renderMap();
-  catching.timer = setTimeout(finishCatch, 1200);   // a release in this time: a switch that sends 127, then 0
+  catching.timer = setTimeout(windowEnds, 1200);    // a release in this time: a switch that sends 127, then 0
+}
+// (beta 55, as the pedal's own learn) the window over with the switch still down: it may be held for a hold, its release is
+// waited for up to 3 s from the press; none: it latches
+function windowEnds() {
+  const c = catching;
+  if (!c) return;
+  if (c.values[0] >= 64 && !c.values.slice(1).some((v) => v < 64)) {
+    c.waiting = true;
+    learnt = `Heard CC ${c.src}: still held… let it go for a hold (0.6 s and more).`;
+    renderMap();
+    c.timer = setTimeout(finishCatch, 1800);
+    return;
+  }
+  finishCatch();
+}
+// how the caught switch was pressed: a hold only where a hold can act (pxmidi.js holdDst; a value is a value)
+function caughtMode(c) {
+  const m = pressMode(c.values, c.times), d = pedalDst(c.tgt);
+  return m === MAP_HOLD && !(d && !d.value && holdDst(d.dst)) ? MAP_PRESS : m;
 }
 async function finishCatch() {
   const c = catching;
   if (!c) return;
   clearTimeout(c.timer);
+  c.hold = caughtMode(c) === MAP_HOLD;
   if (c.slot !== null) { await finishCatchHere(c); return; }
-  const next = pmap && pedalLearn(pmap.entries, c.src, c.tgt, switchMode(c.values));
+  const next = pmap && pedalLearn(pmap.entries, c.src, c.tgt, caughtMode(c));
   if (!next) {
     catching = null;
     learnt = pmap ? `The pedal keeps ${PEDAL_MAP_N} learned controls: forget one below first.` : "This pedal cannot learn controls.";
@@ -152,17 +192,18 @@ async function finishCatch() {
     const r = await app.ed.setPedalMap(pmap.each, next, pmap.inputDb, pmap.tails, pmap.btPower, pmap.outMode);
     if (r.rc === 0) {
       pmap = r;
-      const e = r.entries.find((y) => y && y.src === c.src);
-      learnt = `${tgtName(c.tgt)} now follows CC ${c.src} of the controller on the pedal, in every preset: it ${MODE_TEXT[e ? e.mode : 0]}. The pedal keeps it, with no page open.`;
-      note("Controller on the pedal", { type: "cc", cc: c.src, value: c.values[0] }, `learned on the pedal: ${tgtName(c.tgt)}`, "hit");
-    } else learnt = r.rc === 2 ? "The pedal could not save it (flash): try again." : "The pedal refused it.";
+      const e = r.entries.find((y) => y && y.src === c.src && isHold(y.mode) === c.hold);
+      learnt = `${tgtName(c.tgt)} now follows CC ${c.src} of the controller on the pedal, in every preset: it ${MODE_TEXT[e ? e.mode : 0]}. The pedal keeps it, with no page open.` +
+        (c.hold ? ` ${DOWNGRADE}` : "");
+      note("Controller on the pedal", { type: "cc", cc: c.src, value: c.values[0] }, `learned on the pedal: ${tgtName(c.tgt)}${c.hold ? ", held" : ""}`, "hit");
+    } else learnt = refusal(r, c.hold);
   } catch (e) { learnt = `Not learned: ${e.message}`; }
   catching = null;
-  renderMap();
+  changed();
 }
 // (protocol 6) a control learned for the current preset only: into its own table on the pedal
 async function finishCatchHere(c) {
-  const next = presetEntry(c.src, c.tgt, switchMode(c.values));
+  const next = presetEntry(c.src, c.tgt, caughtMode(c));
   if (!next) { catching = null; learnt = "This cannot be learned for one preset."; renderMap(); return; }
   // (protocol 7) a pedal on a WAH's PEDAL, an AUTO WAH's CENTER or a WHAMMY's PEDAL begins with two jobs, as the pedal's own learn
   const two = app.ed.hasTwoJobs && c.tgt.kind === "param" && dualOk(next) && dualDefault(c.tgt.b, typeOf(app.st.preset, c.tgt.b).name, c.tgt.k);
@@ -171,22 +212,24 @@ async function finishCatchHere(c) {
     const r = await app.ed.presetPut(c.slot, next);
     if (r.rc === 0) {
       plist = r;
-      const e = r.entries.find((y) => y.src === c.src);
+      const e = r.entries.find((y) => y.src === c.src && isHold(y.mode) === c.hold);
       learnt = `${tgtName(c.tgt)} now follows CC ${c.src} of the controller on the pedal, only in preset ${slotName(c.slot)}: it ${MODE_TEXT[e ? plKind(e.mode) : 0]}.` +
         `${e && e.mode & PL_DUAL ? ` While ${blk(c.tgt.b).label} is off, it is the volume instead (untick "or VOLUME" below to keep it on the setting only).` : ""} The pedal keeps it with that preset.`;
-      note("Controller on the pedal", { type: "cc", cc: c.src, value: c.values[0] }, `learned on the pedal for ${slotName(c.slot)}: ${tgtName(c.tgt)}`, "hit");
-    } else learnt = r.rc === 2 ? "The pedal could not save it (flash): try again." : r.rc === 3 ? `The pedal keeps ${r.places} controls learned for single presets, all presets together: forget one first.` : "The pedal refused it.";
+      note("Controller on the pedal", { type: "cc", cc: c.src, value: c.values[0] }, `learned on the pedal for ${slotName(c.slot)}: ${tgtName(c.tgt)}${c.hold ? ", held" : ""}`, "hit");
+    } else learnt = refusal(r, c.hold);
   } catch (e) { learnt = `Not learned: ${e.message}`; }
   catching = null;
-  renderMap();
+  changed();
 }
+// the tables changed: the phone's LIVE page hears it (edlive.js), the MIDI section is drawn again
+function changed() { emit("learned"); renderMap(); }
 async function savePmap(entries, each = pmap.each, inputDb = pmap.inputDb, tails = pmap.tails, btPower = pmap.btPower, outMode = pmap.outMode,
   usb = pmap.usb, more = pmap.more, eq = pmap.eq) {
   try {
     const r = await app.ed.setPedalMap(each, entries, inputDb, tails, btPower, outMode, usb, more, eq);
-    if (r.rc === 0) pmap = r; else say(r.rc === 2 ? "The pedal could not save it (flash)." : "The pedal refused it.", "err");
+    if (r.rc === 0) pmap = r; else say(refusal(r, hasHoldIn(entries)), "err");
   } catch (e) { say(`Not changed: ${e.message}`, "err"); }
-  renderMap();
+  changed();
 }
 const setMore = (k, v) => savePmap(pmap.entries, pmap.each, pmap.inputDb, pmap.tails, pmap.btPower, pmap.outMode, pmap.usb, { ...pmap.more, [k]: v });
 // (protocol 8, ettorebox beta 53) SETTINGS' EQ: the mid's frequencies and widths as the pedal steps them (firmware/px_midi.h)
@@ -203,16 +246,62 @@ async function loadPmap() {
 }
 // (protocol 6) the current preset's own controls, read again when the preset changes
 async function loadPlist() {
-  if (app.conn !== "ready" || !app.ed || !app.ed.hasPresetLearn || !app.st) { plist = null; return; }
+  if (app.conn !== "ready" || !app.ed || !app.ed.hasPresetLearn || !app.st) { plist = null; emit("learned"); return; }
   try { plist = await app.ed.presetMap(app.st.slot); } catch (_) { plist = null; }
+  emit("learned");
 }
-async function savePlist(run) {
+async function savePlist(run, hold = false) {
   if (!plist) return;
   try {
     const r = await run(plist.slot);
-    if (r.rc === 0) plist = r; else say(r.rc === 2 ? "The pedal could not save it (flash)." : r.rc === 3 ? "The pedal has no place left." : "The pedal refused it.", "err");
+    if (r.rc === 0) plist = r; else say(refusal(r, hold), "err");
   } catch (e) { say(`Not changed: ${e.message}`, "err"); }
-  renderMap();
+  changed();
+}
+
+// ---- for the phone's LIVE page (edlive.js): the pedal's tables as they are, and a change written at once ----
+// -> "" done, or what went wrong, in words
+export const learnTables = () => ({ pmap, plist });
+// read again (LIVE shown: something may have been learned on the pedal itself meanwhile), the ones there kept meanwhile
+export async function refreshTables() {
+  if (app.conn !== "ready" || !app.ed || !app.ed.hasPedalLearn || catching) return;
+  try { const r = await app.ed.pedalMap(); if (r.rc === 0) pmap = r; } catch (_) { }
+  await loadPlist();
+  if (app.view === "midi") renderMap();
+}
+export async function writeMap(entries) {
+  if (!pmap || app.conn !== "ready") return "This pedal cannot learn controls.";
+  try {
+    const r = await app.ed.setPedalMap(pmap.each, entries, pmap.inputDb, pmap.tails, pmap.btPower, pmap.outMode, pmap.usb, pmap.more, pmap.eq);
+    if (r.rc !== 0) return refusal(r, hasHoldIn(entries));
+    pmap = r;
+    return "";
+  } catch (e) { return `Not changed: ${e.message}`; }
+  finally { changed(); }
+}
+export async function writePl(slot, e) {
+  if (!plist || app.conn !== "ready") return "This pedal cannot learn controls for one preset.";
+  try {
+    const r = await app.ed.presetPut(slot, e);
+    if (r.rc !== 0) return refusal(r, isHold(e.mode));
+    if (r.slot === app.st.slot) plist = r;
+    return "";
+  } catch (x) { return `Not changed: ${x.message}`; }
+  finally { changed(); }
+}
+// hold: true / false forgets only src's hold / its other entry (beta 55's fourth byte), left out both; a number with only one
+// entry is forgotten whole, the way a pedal before beta 55 understands
+export async function forgetPl(slot, src, hold) {
+  if (!plist || app.conn !== "ready") return "This pedal cannot learn controls for one preset.";
+  const mine = plist.slot === slot ? plist.entries.filter((e) => e.src === src) : [];
+  const both = mine.some((e) => isHold(e.mode)) && mine.some((e) => !isHold(e.mode));
+  try {
+    const r = await app.ed.presetForget(slot, src, both ? hold : undefined);
+    if (r.rc !== 0) return refusal(r, false);
+    if (r.slot === app.st.slot) plist = r;
+    return "";
+  } catch (x) { return `Not changed: ${x.message}`; }
+  finally { changed(); }
 }
 
 // a knob turned on the controller sends a stream: the sections redraw once per frame
@@ -317,6 +406,9 @@ function renderMap() {
   const sc = h("select", { id: "midiscope", "aria-label": "Where a learned control works", onchange: () => { scope = sc.value; } },
     h("option", { value: "all", text: "in every preset" }), h("option", { value: "preset", text: `only in ${cur}` }));
   sc.value = scope;
+  // (beta 55) a switch the pedal learns, held 0.6 s and let go, learns its hold, as on the pedal (a scene, a block, a preset
+  // step, a tap: pxmidi.js holdDst)
+  const holdable = (tgt) => { const d = pmap && pedalDst(tgt); return !!d && !d.value && holdDst(d.dst); };
   const pc = h("input", { type: "checkbox", id: "midipc", checked: cfg.pc, onchange: () => { cfg.pc = pc.checked; saveCfg(); } });
   const stepBtn = (step) => {
     const tgt = { kind: "preset", step }, on_ = learning && sameTgt(learning, tgt), got = learnedFor(tgt);
@@ -365,7 +457,7 @@ function renderMap() {
       app.ed.hasTempo && tapBtn(),
       h("label", { class: "check" }, pc, " Program Change loads presets")),
     h("p", { class: `learnstate${learning || catching ? " on" : ""}`, id: "learnstate", role: "status", text: learning
-      ? `Waiting for a control for ${tgtName(learning)}: ${pmap ? "press a switch of the footswitch linked to the pedal, or " : ""}move a knob or press a switch on your controller${heard.size || pmap ? "" : " (none is connected yet)"}. Esc stops.` : learnt }),
+      ? `Waiting for a control for ${tgtName(learning)}: ${pmap ? `press a switch of the footswitch linked to the pedal${holdable(learning) ? " (held 0.6 s and let go: its hold; it must be momentary)" : ""}, or ` : ""}move a knob or press a switch on your controller${heard.size || pmap ? "" : " (none is connected yet)"}. Esc stops.` : learnt }),
     h("div", { class: "cc-wrap" }, h("table", { class: "cc" },
       h("thead", {}, h("tr", {}, h("th", { scope: "col", text: "Block" }), h("th", { scope: "col", text: "Switch" }), h("th", { scope: "col", text: "Type" }), h("th", { scope: "col", colSpan: NPAR, text: `Settings in ${cur}` }))),
       h("tbody", {}, rows))),
@@ -481,24 +573,39 @@ function renderPmap() {
     eqRows,
     used.length ? used.map(([e, i]) => {
       const t = pedalTarget(e.dst), isValue = e.mode === MAP_VALUE || (t && (t.kind === "param" || t.kind === "type" || t.kind === "exp" || t.kind === "master"));
-      const mode = !isValue && h("select", { "aria-label": `How CC ${e.src} acts`, onchange: () => {
-        const next = pmap.entries.map((x, j) => (j === i ? { ...x, mode: +mode.value } : x)); savePmap(next); } },
-        h("option", { value: String(MAP_PRESS), text: "Press: 127, then 0 when let go" }), h("option", { value: String(MAP_EACH), text: "Each message is a press" }));
-      if (mode) mode.value = String(e.mode === MAP_EACH ? MAP_EACH : MAP_PRESS);
+      const mode = !isValue && switchModeSelect(e, pmap.entries, `How CC ${e.src} acts`,
+        (v) => savePmap(pmap.entries.map((x, j) => (j === i ? { ...x, mode: v } : x))));
       return h("div", { class: "lrow" }, h("span", { class: "chip", text: `CC ${e.src}` }), h("span", { class: "arrow", "aria-hidden": "true", text: "→" }),
         h("b", { text: pedalName(e) }), h("span", { class: "grow" }), mode,
-        h("button", { type: "button", class: "btn icon small", "aria-label": `Forget CC ${e.src} on the pedal`,
+        h("button", { type: "button", class: "btn icon small", "aria-label": `Forget CC ${e.src}${isHold(e.mode) ? " held" : ""} on the pedal`,
           onclick: () => savePmap(pmap.entries.map((x, j) => (j === i ? null : x))) }, icon("x")));
-    }) : h("p", { class: "dim empty-note", text: `None yet. The pedal keeps up to ${PEDAL_MAP_N}.` }));
+    }) : h("p", { class: "dim empty-note", text: `None yet. The pedal keeps up to ${PEDAL_MAP_N}.` }),
+    hasHoldIn(pmap.entries) && h("p", { class: "dim small", id: "pmapdown", text: DOWNGRADE }));
 }
 
+// how a learned switch acts, as a list: on a press (127, then 0), at each message, or (after beta 55) when held 0.6 s, where
+// its number has room for it (one hold and one other entry a number); others: the table it is in
+function switchModeSelect(e, others, label, pick) {
+  const hold = isHold(e.mode), mine = others.filter((x) => x && x !== e && x.src === e.src);
+  const holdTaken = mine.some((x) => isHold(x.mode)), otherTaken = mine.some((x) => !isHold(x.mode));
+  const s = h("select", { "aria-label": label, onchange: () => pick(+s.value) },
+    h("option", { value: String(MAP_PRESS), text: "Press: 127, then 0 when let go", disabled: hold && otherTaken }),
+    h("option", { value: String(MAP_EACH), text: "Each message is a press", disabled: hold && otherTaken }),
+    holdDst(e.dst) && h("option", { value: String(MAP_HOLD), text: "Held 0.6 s (a momentary switch)", disabled: !hold && holdTaken }));
+  s.value = String(hold ? MAP_HOLD : plKind(e.mode) === MAP_EACH ? MAP_EACH : MAP_PRESS);
+  return s;
+}
 // (protocol 6) the current preset's own controls on the pedal: what each drives, how a switch acts, a pedal's heel and toe
 const valText = (param, v) => (param && param.texts && param.texts[v]) || String(v);
 function renderPlist() {
   const p = app.st.preset;
   const rows = plist.entries.map((e, i) => {
     const t = pedalTarget(e.dst), param = t && t.kind === "param" ? typeOf(p, t.b).params[t.k] : null;
-    const put = (patch) => savePlist((slot) => app.ed.presetPut(slot, { ...e, ...patch }));
+    const put = (patch) => savePlist((slot) => app.ed.presetPut(slot, { ...e, ...patch }), isHold(patch.mode ?? e.mode));
+    // (beta 55) forgetting one of a number's two (its press, its hold) keeps the other: the fourth byte says which. A number
+    // with one entry, and a footswitch of the pedal's own (it forgets all it switches), are forgotten whole, as before
+    const both = !FOOT[e.src] && plist.entries.some((x) => x !== e && x.src === e.src && isHold(x.mode) !== isHold(e.mode));
+    const forgetIt = () => savePlist((slot) => app.ed.presetForget(slot, e.src, both ? isHold(e.mode) : undefined));
     const kind = plKind(e.mode), two = !!(e.mode & PL_DUAL);
     let how = null;
     if (param && kind === MAP_VALUE) {
@@ -516,16 +623,13 @@ function renderPlist() {
         vol && h("label", { class: "tick", title: "As a multi-effect's expression pedal with a toe switch: whatever turns the block on and off changes the pedal's job. Where the volume acts: Volume pedal, above." },
           vol, ` or VOLUME when ${blk(t.b).label} is off`)];
     } else if (kind !== MAP_VALUE && !FOOT[e.src]) {   // (beta 54: a footswitch of the pedal's own has nothing to choose)
-      const m = h("select", { "aria-label": `How CC ${e.src} acts`, onchange: () => put({ mode: +m.value }) },
-        h("option", { value: String(MAP_PRESS), text: "Press: 127, then 0 when let go" }), h("option", { value: String(MAP_EACH), text: "Each message is a press" }));
-      m.value = String(kind === MAP_EACH ? MAP_EACH : MAP_PRESS);
-      how = m;
+      how = switchModeSelect(e, plist.entries, `How CC ${e.src} acts`, (v) => put({ mode: v }));
     }
     const foot = FOOT[e.src] ? "The pedal's own footswitch, in STOMP (both footswitches change the mode). Forgetting it forgets all it switches in this preset." : null;
     return h("div", { class: "lrow" }, h("span", { class: "chip", text: plSrc(e.src), title: foot }), h("span", { class: "arrow", "aria-hidden": "true", text: "→" }),
       h("b", { text: `${pedalName(e)}${two ? " +VOL" : ""}` }), h("span", { class: "grow" }), how,
-      h("button", { type: "button", class: "btn icon small", "aria-label": `Forget ${plSrc(e.src)} in this preset`,
-        onclick: () => savePlist((slot) => app.ed.presetForget(slot, e.src)) }, icon("x")));
+      h("button", { type: "button", class: "btn icon small", "aria-label": `Forget ${plSrc(e.src)}${isHold(e.mode) ? " held" : ""} in this preset`,
+        onclick: forgetIt }, icon("x")));
   });
   return h("div", { class: "learned", id: "plist" },
     rows.length ? rows : h("p", { class: "dim empty-note", text: "None in this preset. Choose \"only in\" this preset above and learn one, or on the pedal: a block's row, hold FX." }),

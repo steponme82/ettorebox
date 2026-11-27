@@ -618,10 +618,10 @@ body.phone .pacts .btn:not(.icon) { flex: none; }
 .ph-dots i { inline-size: 4px; block-size: 4px; border-radius: 50%; background: var(--line); }
 .ph-dots i.on { background: var(--c); }
 .ph-scedit { display: grid; place-items: center; min-block-size: 44px; padding: 0; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); color: var(--dim); }
-/* the chain: a block's page */
-.ph-strip { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 3px; }
+/* LIVE, then the chain: a block's page */
+.ph-strip { display: grid; grid-template-columns: 1.3fr repeat(12, minmax(0, 1fr)); gap: 2px; }
 .ph-chip { block-size: 30px; padding: 0; border: 1px solid var(--line-soft); border-radius: 5px; background: var(--raised); color: var(--faint);
-  font-size: 0.59375rem; font-weight: 800; letter-spacing: 0.02em; overflow: hidden; }
+  font-size: 0.5625rem; font-weight: 800; letter-spacing: 0; white-space: nowrap; overflow: hidden; }
 .ph-chip.on { background: var(--c); border-color: var(--c); color: oklch(0.16 0.02 150); }
 .ph-chip.cur { outline: 2px solid var(--ink); outline-offset: 1px; }
 /* the pages */
@@ -685,3 +685,73 @@ body.phone .pacts .btn:not(.icon) { flex: none; }
 .sc-acts { display: flex; flex-wrap: wrap; gap: 8px; }
 .sc-acts .btn.primary { flex: 1; }
 @media (prefers-reduced-motion: reduce) { .ph-v, .ph-fine { transition: none; } }
+
+/* ---- LIVE, the phone's first page (edlive.js): what plays now, the expression pedal, the foot controller's buttons ----
+   Read from a stand: the preset and its scene big, the blocks lit in their colours, the pedal's job with the line the pedal
+   shows (red an effect, green the volume), the four buttons as they lie on the floor, A to D. */
+.ph-chip.live { color: var(--acc); border-color: color-mix(in oklch, var(--acc) 45%, var(--line-soft)); }
+.ph-live { gap: 8px; }
+.ph-live > * { flex-shrink: 0; }   /* (a short phone scrolls the page; nothing is squeezed) */
+.lv-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; min-block-size: 30px; font-weight: 800; font-size: 1rem; letter-spacing: 0.04em; }
+.lv-scene { font-size: 1.375rem; color: var(--acc); white-space: nowrap; }
+.lv-tempo { color: var(--dim); font-variant-numeric: tabular-nums; }
+.lv-blocks { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+.lv-b { display: grid; align-content: center; gap: 1px; min-block-size: 44px; padding: 3px 7px; border: 1px solid var(--line-soft); border-radius: var(--r);
+  background: var(--raised); color: var(--faint); text-align: start; overflow: hidden; }
+.lv-b b { font-size: 0.8125rem; letter-spacing: 0.04em; }
+.lv-b small { font-size: 0.625rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lv-b.on { background: var(--c); border-color: var(--c); color: oklch(0.16 0.02 150); }
+.lv-h { display: flex; align-items: center; gap: 8px; min-block-size: 18px; margin-block-start: 2px; }
+.lv-exp { position: relative; display: grid; gap: 2px; justify-items: start; min-block-size: 64px; padding: 8px 10px 10px 15px; border: 1px solid var(--line);
+  border-radius: var(--r); background: var(--surface); text-align: start; overflow: hidden; }
+.lv-exp::before { content: ""; position: absolute; inset: 0 auto 0 0; inline-size: 5px; background: var(--line); }
+.lv-exp.fx::before { background: var(--err); }
+.lv-exp.vol::before { background: var(--ok); }
+.lv-k { display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: baseline; font-size: 0.75rem; font-weight: 700; color: var(--faint); }
+.lv-k b { color: var(--dim); letter-spacing: 0.06em; }
+.lv-where { margin-inline-start: 4px; }
+.lv-what { font-size: 1.0625rem; font-weight: 800; }
+.lv-sub2 { font-size: 0.75rem; color: var(--dim); }
+.lv-note2 { font-size: 0.75rem; font-weight: 800; color: var(--warn); }
+.lv-pos { position: absolute; inset: auto auto 0 0; block-size: 3px; inline-size: 0; background: var(--ink); opacity: 0.6; transition: inline-size 0.06s linear; }
+.lv-feet { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.lv-ft { display: grid; align-content: start; gap: 4px; min-block-size: 86px; padding: 8px 6px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface); text-align: start; overflow: hidden; }
+.lv-ft .lv-l { display: flex; align-items: baseline; justify-content: space-between; gap: 4px; font-size: 1.25rem; font-weight: 800; }
+.lv-ft .lv-l small { font-size: 0.625rem; font-weight: 700; color: var(--faint); }
+.lv-p { font-size: 0.875rem; font-weight: 800; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lv-hd { font-size: 0.75rem; font-weight: 800; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lv-hd small { font-size: 0.625rem; color: var(--faint); }
+.lv-p.lit, .lv-hd.lit { color: var(--c); }
+.lv-hd.no { color: var(--warn); }
+.lv-ft.none .lv-p { font-size: 0.75rem; color: var(--faint); white-space: normal; }
+.lv-ft.down { border-color: var(--ink); background: var(--raised); }
+.lv-ft.held .lv-hd { color: var(--acc); }
+.lv-ft.hit { animation: lv-hit 0.7s var(--ease); }
+.lv-ft.naming { border-style: dashed; border-color: var(--acc); animation: lv-wait 0.9s ease-in-out infinite alternate; }
+@keyframes lv-hit { from { box-shadow: 0 0 0 3px var(--acc); } }
+@keyframes lv-wait { to { background: var(--acc-soft); } }
+.lv-say { font-size: 0.75rem; color: var(--dim); }
+/* its dialog: a button's press and hold, the pedal's job; in this preset or in every one */
+.ph-livedlg .ph-dh { display: flex; align-items: center; gap: 10px; padding: 18px 20px 0; }
+.ph-livedlg .ph-dh h2 { flex: 1; padding: 0; }
+.lv-numrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--ink); }
+.lv-scope { display: flex; justify-self: stretch; }
+.lv-scope button { flex: 1; min-block-size: 44px; padding-inline: 6px; white-space: normal; line-height: 1.2; }
+.lv-ends { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.lv-pick { display: grid; gap: 3px; min-inline-size: 0; }
+.lv-from { font-size: 0.6875rem; font-weight: 700; color: var(--faint); }
+.lv-two { display: flex; align-items: center; gap: 8px; font-size: 0.875rem; font-weight: 700; }
+.lv-two input { inline-size: 20px; block-size: 20px; margin: 0; }
+.lv-warn { font-size: 0.8125rem; font-weight: 700; color: var(--warn); }
+.lv-status { min-block-size: 1.3em; font-size: 0.8125rem; font-weight: 700; color: var(--ok); }
+.lv-status.err { color: var(--err); }
+@media (prefers-reduced-motion: reduce) { .lv-ft.hit, .lv-ft.naming { animation: none; } .lv-pos { transition: none; } }
+/* a short phone (an iPhone SE): LIVE closer together; what does not fit scrolls. The preset's number never wraps */
+@media (max-height: 700px) {
+  .ph-live { gap: 6px; }
+  .lv-b { min-block-size: 38px; padding-block: 2px; }
+  .lv-exp { min-block-size: 54px; padding-block: 6px 8px; }
+  .lv-ft { min-block-size: 74px; padding-block: 6px; }
+}
+body.phone .num { flex: none; }

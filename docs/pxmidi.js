@@ -118,8 +118,55 @@ export function pedalDst(tgt) {
   if (tgt.kind === "type") return { dst: ccType(tgt.b), value: true };
   if (tgt.kind === "scene") return { dst: CC_SCENE0 + tgt.n, value: false };
   if (tgt.kind === "tap") return { dst: CC_TAP, value: false };     // (ettorebox beta 55: CC 116, a tap of the tempo)
+  if (tgt.kind === "master") return { dst: CC_MASTER, value: true };   // (the LIVE page: a pedal on the MASTER volume,
+  if (tgt.kind === "exp") return { dst: CC_EXP, value: true };         // or on CC 117's own job)
   return null;
 }
+// ---- ettorebox beta 55 (editor protocol 9): HOLD, a learned switch's fourth mode (firmware/px_midi.h, px_midi_io.h) ----
+// A momentary switch (64 and up on its press, below 64 on its release) held HOLD_MS makes its HOLD entry act once, as a press,
+// while still held: a scene (65 to 68), a block's flip, the next or the previous preset (118, 119), a tap of the tempo (116).
+// Let go sooner, its other entry acts on the release (the press, then the release, as they came); after a hold the release
+// does nothing. One number has at most one HOLD entry and one other, in MAP and in a preset's PL alike (MAP refuses two of a
+// kind; PL replaces the entry of the same kind, and still one control a row). Each kind is looked for apart: the preset's own,
+// else MAP's (a press with neither: the pedal's own number). A latching switch (one message a press) never holds; a pedal
+// before beta 55 refuses mode 3 (rc 1), and going back to one drops a preset's holds, and MAP whole if it holds one.
+export const MAP_HOLD = 3, HOLD_MS = 600;
+export const isHold = (mode) => (mode & 0x3F) === MAP_HOLD;
+// the pedal's own numbers a hold may act on
+export function holdDst(dst) {
+  const t = pedalTarget(dst);
+  return !!t && (t.kind === "toggle" || t.kind === "scene" || t.kind === "next" || t.kind === "prev" || t.kind === "tap");
+}
+// a switch's mode in an entry: HOLD, else EACH (a switch that sends one message a press), else PRESS
+const switchKind = (mode) => (mode === MAP_HOLD ? MAP_HOLD : mode === MAP_EACH ? MAP_EACH : MAP_PRESS);
+// what controller number `src` does in a preset (pl: its own entries; map: the pedal's for every preset), as the pedal looks
+// them up (px_midi_map_in, px_mh_dst): press, the entry that is not a hold (PRESS, EACH or a pedal's VALUE), and hold, the
+// HOLD one, each the preset's own, else MAP's; pressOwn / holdOwn: from the preset's own; own: either; learned: either found.
+// No press: the pedal's own map reads the number (pedalTarget), even beside a hold
+export function switchJobs(src, pl, map) {
+  const find = (list, hold) => (list || []).find((e) => e && e.src === src && isHold(e.mode) === hold) || null;
+  const ownP = find(pl, false), ownH = find(pl, true), press = ownP || find(map, false), hold = ownH || find(map, true);
+  return { press, hold, pressOwn: !!ownP, holdOwn: !!ownH, own: !!(ownP || ownH), learned: !!(press || hold) };
+}
+// how a switch was pressed while it was learned, from its messages (values) and their times (ms), in order, as the pedal's own
+// learn tells (px_midi.h, beta 55): EACH when no release came (one message a press: it latches), HOLD when it was let go after
+// HOLD_MS, else PRESS
+export function pressMode(values, times) {
+  if (!values.length || values[0] < 64) return MAP_EACH;
+  const i = values.findIndex((v, k) => k > 0 && v < 64);
+  if (i < 0) return MAP_EACH;
+  return times[i] - times[0] >= HOLD_MS ? MAP_HOLD : MAP_PRESS;
+}
+// the target an entry is read as (pedalDst's way back), or null; a block's flip and its on/off number are both its { on }
+export function entryTgt(e) {
+  const t = e && pedalTarget(e.dst);
+  if (!t) return null;
+  if (t.kind === "toggle" || t.kind === "on") return { kind: "on", b: t.b };
+  if (t.kind === "next" || t.kind === "prev") return { kind: "preset", step: t.kind === "next" ? 1 : -1 };
+  return t;
+}
+// the pedal's table for every preset without src's hold (hold true) or without its other entry (false)
+export const pedalForget = (entries, src, hold) => entries.map((x) => (x && x.src === src && isHold(x.mode) === hold ? null : x));
 // what one of the pedal's own numbers does: ccTarget's, or { kind: "next" | "prev" | "pad" | "tap" | "exp" }, or
 // { kind: "scene", n }, or null
 export function pedalTarget(cc) {
@@ -131,15 +178,18 @@ export function pedalTarget(cc) {
   if (cc >= CC_SCENE0 && cc < CC_SCENE0 + SCENES) return { kind: "scene", n: cc - CC_SCENE0 };
   return ccTarget(cc);
 }
-// the table with controller number `src` learned for `tgt` (mode: how the switch behaved while it was learned): a new array
-// with the entry in the first free place (an entry with the same src gives its place), or null when the table is full
+// the table with controller number `src` learned for `tgt` (mode: how the switch behaved while it was learned, or MAP_HOLD):
+// a new array with the entry in the first free place (src's entry of the same kind gives its place: a hold src's hold,
+// anything else src's other entry), or null when the table is full, or for a hold on what a hold cannot do
 export function pedalLearn(entries, src, tgt, mode) {
   const d = pedalDst(tgt);
   if (!d || !Number.isInteger(src) || src < 0 || src > 127) return null;
-  const out = entries.map((x) => (x && x.src === src ? null : x));
+  const m = d.value ? MAP_VALUE : switchKind(mode);
+  if (m === MAP_HOLD && !holdDst(d.dst)) return null;
+  const out = pedalForget(entries, src, m === MAP_HOLD);
   const i = out.findIndex((x) => !x);
   if (i < 0) return null;
-  out[i] = { src, dst: d.dst, mode: d.value ? MAP_VALUE : mode === MAP_EACH ? MAP_EACH : MAP_PRESS };
+  out[i] = { src, dst: d.dst, mode: m };
   return out;
 }
 // ---- editor protocol 6 (test builds 46 to 49): a preset's OWN controls learned on the pedal (firmware/px_midi.h mid_pl) ----
@@ -154,7 +204,9 @@ export const PRESET_MAP_N = 64;
 export function presetEntry(src, tgt, mode) {
   const d = pedalDst(tgt);
   if (!d || !Number.isInteger(src) || src < 0 || src > 127) return null;
-  return { src, dst: d.dst, mode: d.value ? MAP_VALUE : mode === MAP_EACH ? MAP_EACH : MAP_PRESS, lo: 0, hi: 100, clo: 0, chi: 127 };
+  const m = d.value ? MAP_VALUE : switchKind(mode);
+  if (m === MAP_HOLD && !holdDst(d.dst)) return null;
+  return { src, dst: d.dst, mode: m, lo: 0, hi: 100, clo: 0, chi: 127 };
 }
 // ---- editor protocol 7 (test build 51): a two-job pedal (firmware/px_midi.h PXM_PL_DUAL) ----
 // A preset's own pedal (mode "value") on a block's setting with bit 6 of its mode set: the setting while the block is on, the
@@ -171,6 +223,30 @@ export function dualOk(e) {
 // WAH's CENTER and a WHAMMY's PEDAL (the catalogue's type names), NOTHING elsewhere
 export function dualDefault(b, typeName, k) {
   return (b === B_SFX && ((typeName === "WAH" && k === 0) || (typeName === "AUTO WAH" && k === 3))) || (b === B_PITCH && typeName === "WHAMMY" && k === 3);
+}
+// ---- the LIVE page (docs/edlive.js): what the expression pedal moves in the sound playing ----
+// src: its controller number; pl, map: as switchJobs'; on(b): block b on, tn(b): its type's name (the catalogue's).
+// -> { from: "own" | "every" | "pedal" (nothing learned: the pedal's own map reads src), e: the entry (or null), job, b, k,
+// dual, auto }. job: "whammy" or "wah" (CC 117's own job: a WHAMMY that is on, else a WAH or an AUTO WAH that is on; auto),
+// "volume" (CC 117's otherwise, auto; a two-job pedal's while its block is off, dual), "param" (a setting: b, k; a two-job
+// pedal's while its block is on, dual), "master", "type" (a block's model: b), "switch" (a switch's number: tgt), "none"
+export function expJob(src, pl, map, on, tn) {
+  const j = switchJobs(src, pl, map), e = j.press;
+  const from = j.pressOwn ? "own" : e ? "every" : "pedal";
+  const t = pedalTarget(e ? e.dst : src);
+  if (!t) return { from, e, job: "none" };
+  if (t.kind === "exp") {
+    if (on(B_PITCH) && tn(B_PITCH) === "WHAMMY") return { from, e, job: "whammy", b: B_PITCH, auto: true };
+    if (on(B_SFX) && (tn(B_SFX) === "WAH" || tn(B_SFX) === "AUTO WAH")) return { from, e, job: "wah", b: B_SFX, auto: true };
+    return { from, e, job: "volume", auto: true };
+  }
+  if (t.kind === "param") {
+    const dual = !!e && !!(e.mode & PL_DUAL) && dualOk(e);
+    return { from, e, job: dual && !on(t.b) ? "volume" : "param", b: t.b, k: t.k, dual };
+  }
+  if (t.kind === "master") return { from, e, job: "master" };
+  if (t.kind === "type") return { from, e, job: "type", b: t.b };
+  return { from, e, job: "switch", tgt: entryTgt(e || { dst: src }) };
 }
 // how a switch behaves, from the messages one press gave (values, in order): "press" when a value of 64 or more is
 // followed by one below (it sends 127, then 0 when let go), else "each" (one message a press)

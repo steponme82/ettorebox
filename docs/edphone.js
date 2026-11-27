@@ -3,24 +3,32 @@
 // in the chain's order, swiped sideways; the preset's scenes on top, its level at the bottom, on every page. A block's
 // settings are faders side by side that never jump: a drag moves the value from where it is (slowly, one step at a time),
 // − and + step it (held, they repeat), and two quick taps on a value bring back the saved one. On a tablet or a computer
-// the section is edsound.js' own; both edit the same sound, and turning the phone sideways shows that one.
+// the section is edsound.js' own; both edit the same sound, and turning the phone sideways shows that one. Before the
+// blocks, LIVE (edlive.js): what plays now, the expression pedal and the foot controller's buttons, changed from there.
 
 import { app, $, h, on, emit, blk, typeOf, fill, blockIndex, say, choices } from "./edcore.js";
 import { sendParam, setFocus, toggle, setType, paramChoices, optionOf, gtSplit, notesOn, setTempo, tapTempo, LVL_K, levelText } from "./edsound.js";
 import { comparing } from "./edpresets.js";
 import { scenesNow, sceneTitle, sceneShort, sceneMask, sceneKnown, recallScene, toggleScene, sceneForm } from "./edscenes.js";
 import { TONES, PICKUPS, gtTone, gtPickup, gtPack, NOTES, syncTop, noteName } from "./pxedit.js";
+import { livePage, initLive } from "./edlive.js";
+import { refreshTables } from "./edmidi.js";
 
 export const PHONE = matchMedia("(max-width: 599px)");
 const reduce = matchMedia("(prefers-reduced-motion: reduce)");
-const HINT_KEY = "ettorebox-phone-hint";
+const HINT_KEY = "ettorebox-phone-hint", LIVE_KEY = "ettorebox-phone-live";
+const LIVE = -1;             // the LIVE page, in place of a block (it is the first page)
 let box = null;              // the section's own part (#ph), under the preset's header
 let sig = "";                // what the pages were built for (the chain, the types, the slots' names)
 let paints = [];             // each control's way to show the sound again
 let held = null;             // the control under a finger: left as it is while the pedal answers
 let settleT = 0;
 let placed = 0;              // when a page was put in view by the page itself (built, turned, resized): not a swipe
-let current = null;          // the block whose page is meant to be in view (a hidden pager's scroll says nothing)
+let current = null;          // the block whose page is meant to be in view (a hidden pager's scroll says nothing), or LIVE
+// LIVE stays the page in view once chosen, the next time too: a phone on a stand
+let liveLast = false;
+try { liveLast = localStorage.getItem(LIVE_KEY) === "1"; } catch (_) { }
+function rememberLive(v) { if (v === liveLast) return; liveLast = v; try { localStorage.setItem(LIVE_KEY, v ? "1" : "0"); } catch (_) { } }
 
 // ---- the pieces every control uses ----
 const cur = (b, k) => app.st.preset.p[b][k];
@@ -269,14 +277,18 @@ function sceneBar() {
 }
 function strip() {
   const order = app.st.preset.order;
-  const el = h("div", { class: "ph-strip", role: "group", "aria-label": "The chain: a block's page" }, order.map((b, i) =>
+  const live = h("button", { type: "button", class: "ph-chip live", text: "LIVE", "aria-label": "Live: what plays now", onclick: () => goTo(LIVE, true) });
+  const el = h("div", { class: "ph-strip", role: "group", "aria-label": "Live, and the chain: a block's page" }, live, order.map((b, i) =>
     h("button", { type: "button", class: "ph-chip", "data-b": b, style: `--c:${blk(b).color}`, text: blk(b).label,
       "aria-label": `${blk(b).name}, ${i + 1} of ${order.length}`, onclick: () => goTo(b, true) })));
   paints.push(() => {
+    const s = shown();
+    live.classList.toggle("cur", s === LIVE);
     for (const c of el.children) {
+      if (c === live) continue;
       const b = +c.dataset.b;
       c.classList.toggle("on", !!app.st.preset.on[b]);
-      c.classList.toggle("cur", b === shown());
+      c.classList.toggle("cur", b === s);
     }
   });
   return el;
@@ -311,37 +323,46 @@ function dock() {
 
 // ---- the pages, swiped ----
 const pager = () => box && box.querySelector(".ph-pager");
+// a page's place: LIVE first, then the blocks in the chain's order (-1: none)
+const pageIndex = (b) => (b === LIVE ? 0 : app.st.preset.order.indexOf(b) + 1 || -1);
+// the page in view: LIVE, or a block
 function shown() {
   const pg = pager();
-  if (!pg || !pg.clientWidth) return app.focus;
-  const b = app.st.preset.order[Math.round(pg.scrollLeft / pg.clientWidth)];
+  if (!pg || !pg.clientWidth) return current === LIVE ? LIVE : app.focus;
+  const i = Math.round(pg.scrollLeft / pg.clientWidth);
+  if (i === 0) return LIVE;
+  const b = app.st.preset.order[i - 1];
   return b === undefined ? app.focus : b;
 }
 function goTo(b, smooth) {
-  const pg = pager(), i = app.st.preset.order.indexOf(b);
+  const pg = pager(), i = pageIndex(b);
   if (!pg || i < 0) return;
   current = b;
   pg.scrollTo({ left: i * pg.clientWidth, behavior: smooth && !reduce.matches ? "smooth" : "auto" });
   if (!smooth) settle();
 }
-// a block's page put in view at once: now, and again once the layout has settled (a phone turned upright, a new size)
+// a page put in view at once: now, and again once the layout has settled (a phone turned upright, a new size)
 function place(b) {
-  const pg = pager(), i = app.st.preset.order.indexOf(b);
+  const pg = pager(), i = pageIndex(b);
   if (!pg || i < 0) return;
   current = b;
   placed = Date.now();
   pg.scrollLeft = i * pg.clientWidth;
 }
 function placeSoon(b) { place(b); setTimeout(() => { if (app.st && b === current) place(b); }, 80); }
-// a page that stays after a swipe: the block is the editor's (and the pedal's) block in focus
+// a page that stays after a swipe: a block is the editor's (and the pedal's) block in focus; LIVE leaves the focus as it is
 function settle() {
   if (!app.st) return;
   paint();
   if (Date.now() - placed < 400) return;
   const b = shown();
+  if (b === LIVE && current !== LIVE) refreshTables();             // (LIVE arrived at: what the pedal learned meanwhile)
   current = b;
-  if (b !== app.focus) setFocus(b);
+  rememberLive(b === LIVE);
+  if (b !== LIVE && b !== app.focus) setFocus(b);
 }
+// the page to show again: LIVE when it was, else the block in focus
+const again = () => (current === LIVE ? LIVE : app.focus);
 
 // ---- building, showing ----
 function signature() {
@@ -354,10 +375,11 @@ function build() {
     box = h("div", { class: "ph", id: "ph" });
     $("view-sound").querySelector(".phead").after(box);
   }
-  const keep = current !== null && app.st.preset.order.includes(current) ? current : app.focus;
-  paints = []; held = null;
   const order = app.st.preset.order;
-  const pg = h("div", { class: "ph-pager", "aria-label": "The blocks, one a page: swipe sideways" }, order.map((b, i) => page(b, i, order.length)));
+  const keep = current === LIVE || (current !== null && order.includes(current)) ? current : current === null && liveLast ? LIVE : app.focus;
+  paints = []; held = null;
+  const pg = h("div", { class: "ph-pager", "aria-label": "Live, then the blocks, one a page: swipe sideways" },
+    livePage(paints, (b) => goTo(b, true)), order.map((b, i) => page(b, i, order.length)));
   pg.addEventListener("scroll", () => { clearTimeout(settleT); settleT = setTimeout(settle, 120); }, { passive: true });
   fill(box, sceneBar(), strip(), pg, dock());
   sig = signature();
@@ -373,14 +395,14 @@ function render(o = {}) {
   if (!PHONE.matches || !app.st || !app.cat || !(app.conn === "ready" || app.conn === "lost")) return;
   if (!box || o.force || signature() !== sig) build();
   else paint();
-  // a block chosen on the pedal: its page
-  if (o.push && app.focus !== shown()) goTo(app.focus, true);
+  // a block chosen on the pedal: its page (LIVE stays: it shows the pedal as it is)
+  if (o.push && current !== LIVE && app.focus !== shown()) goTo(app.focus, true);
 }
 function hintOnce() {
   let n = 0;
   try { n = +(localStorage.getItem(HINT_KEY) || 0); } catch (_) { }
   if (n >= 3) return;
-  say("Swipe sideways for the next block. Drag a fader up or down; slowly for single steps.", "info");
+  say("Swipe sideways for the next block; the first page, LIVE, shows what plays. Drag a fader up or down; slowly for single steps.", "info");
   try { localStorage.setItem(HINT_KEY, String(n + 1)); } catch (_) { }
 }
 
@@ -410,9 +432,10 @@ function drawScenes() {
 }
 
 export function initPhone() {
+  initLive();
   const apply = () => {
     document.body.classList.toggle("phone", PHONE.matches);
-    current = app.focus;                                          // (the block in focus, whatever was swiped before)
+    if (current !== LIVE) current = app.focus;                    // (the block in focus, whatever was swiped before; LIVE stays)
     if (PHONE.matches) { render({ force: true }); if (app.conn === "ready") hintOnce(); }
     else if (app.st && app.conn === "ready") emit("state", {});     // (the wide section drawn again, with what changed here)
   };
@@ -427,8 +450,8 @@ export function initPhone() {
     if (app.conn !== "ready" && dlg && dlg.open) dlg.close();
     if (app.conn === "ready" && PHONE.matches) hintOnce();
   });
-  // the Sound tab shown again, another size: the page in focus (the pages had no width, or another, meanwhile)
-  on("view", () => { if (PHONE.matches && app.view === "sound" && box && app.st) placeSoon(app.focus); });
-  addEventListener("resize", () => { if (PHONE.matches && box && app.st) placeSoon(app.focus); });
+  // the Sound tab shown again, another size: the page in focus, or LIVE (the pages had no width, or another, meanwhile)
+  on("view", () => { if (PHONE.matches && app.view === "sound" && box && app.st) placeSoon(again()); });
+  addEventListener("resize", () => { if (PHONE.matches && box && app.st) placeSoon(again()); });
   document.body.classList.toggle("phone", PHONE.matches);
 }
