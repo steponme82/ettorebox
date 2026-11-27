@@ -46,6 +46,13 @@ const validBpm = (x) => Number.isFinite(x) && x >= 30 && x <= 300;
 const bpm10 = (bpm) => { const v = validBpm(bpm) ? Math.round(bpm * 10) : 0; return [v & 0x7F, (v >> 7) & 0x7F]; };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function fail(code, msg) { const e = new Error(msg); e.code = code; return e; }
+// (ettorebox beta 55) the replies that begin with their request's own numbers (firmware/px_editor.h): over a slow link (a
+// phone's Bluetooth) a request asked again may be answered twice, and the late answer must not be taken for the next
+// request's of the same kind
+const ECHO = { [C.CAT_BLOCK]: 1, [C.CAT_TYPE]: 2, [C.TEXTS]: 3 };
+// each firmware's catalogue, or the part of it read so far, for as long as this page lives (catalog): a connect after a lost
+// link goes on from there even where the browser keeps nothing
+const catMem = new Map();
 
 // a reply's arguments, read in order
 class Reader {
@@ -106,7 +113,9 @@ export class Editor {
     if (d.length < 6 || d[0] !== 0xF0 || d[1] !== H[0] || d[2] !== H[1] || d[3] !== H[2] || d[d.length - 1] !== 0xF7) return;
     const cmd = d[4], args = d.slice(5, d.length - 1);
     if (this.waiting && this.waiting.cmd === cmd) {
-      const w = this.waiting; this.waiting = null; clearTimeout(w.timer); w.resolve(args);
+      const w = this.waiting;
+      if (w.echo && w.args.slice(0, w.echo).some((x, i) => (x & 0x7F) !== args[i])) return;   // (an earlier request's, late)
+      this.waiting = null; clearTimeout(w.timer); w.resolve(args);
       return;
     }
     if (cmd === C.STATE && this.onState) { try { this.onState(this._state(args)); } catch (_) { } }
@@ -121,19 +130,22 @@ export class Editor {
   _once(cmd, args, timeout) {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { this.waiting = null; reject(fail("timeout", "the pedal did not answer")); }, timeout);
-      this.waiting = { cmd, resolve, reject, timer };
+      this.waiting = { cmd, args, echo: ECHO[cmd] || 0, resolve, reject, timer };
       try { this._send(cmd, args); } catch (e) { clearTimeout(timer); this.waiting = null; reject(e); }
     });
   }
-  // one request at a time; one retry after a timeout
-  request(cmd, args = [], timeout = this.timeout) {
+  // one request at a time. A timeout asks again, `tries` times in all, each wait longer than the last (timeout, twice it, three
+  // times, up to 5 s; a longer timeout as given): a phone's Bluetooth link can hold a reply back for seconds, and the pedal drops
+  // a request that comes while the one before still waits (ettorebox beta 55: before, one retry after the same 1.5 s)
+  request(cmd, args = [], timeout = this.timeout, tries = 3) {
     const run = async () => {
-      try { return await this._once(cmd, args, timeout); }
-      catch (e) {
-        if (e.code !== "timeout") throw e;
-        await sleep(50);
-        try { return await this._once(cmd, args, timeout); }
-        catch (e2) { if (e2.code === "timeout" && this.onLost) this.onLost(); throw e2; }
+      for (let i = 0; ; i++) {
+        try { return await this._once(cmd, args, Math.max(timeout, Math.min(timeout * (i + 1), 5000))); }
+        catch (e) {
+          if (e.code !== "timeout") throw e;
+          if (i + 1 >= tries) { if (this.onLost) this.onLost(); throw e; }
+          await sleep(50);
+        }
       }
     };
     const p = this.queue.then(run, run);
@@ -163,7 +175,7 @@ export class Editor {
   }
   // the log channel: its text lines; a timeout when this firmware has none (only the Bluetooth test image answers)
   async diag() {
-    const r = new Reader(await this.request(C.DIAG, [], 600));
+    const r = new Reader(await this.request(C.DIAG, [], 600, 2));   // (two tries: a firmware without it is told at once)
     return Array.from({ length: r.b() }, () => r.s());
   }
   close() {
@@ -172,40 +184,76 @@ export class Editor {
   }
 
   // ---- the catalogue: blocks, types, parameter names and value texts (cached per firmware) ----
+  // Kept under the pedal's identity and firmware version, in this page (catMem) and in the browser (localStorage). A read cut
+  // short (a phone's Bluetooth link that stopped answering) keeps the types it read, in the page and in the browser under
+  // "-part", and the next connect goes on from there instead of starting over (ettorebox beta 55)
   async catalog(progress = () => {}) {
-    const key = `openpocket-cat-${this.info.identity}-${this.info.version}`;
-    try { const c = JSON.parse(localStorage.getItem(key) || "null"); if (c && c.blocks && c.blocks.length === this.info.nblk) { this.cat = c; if (this.hasNam) await this.namTexts(); if (this.hasIr) await this.irTexts(); return c; } } catch (_) { }
-    const blocks = [];
-    for (let b = 0; b < this.info.nblk; b++) {
-      const r = new Reader(await this.request(C.CAT_BLOCK, [b]));
-      r.b();
-      const label = r.s(), name = r.s(), ntypes = r.b();
-      const c = r.b() | r.b() << 7 | r.b() << 14;
-      const rgb = `#${(((c >> 11) & 31) * 255 / 31 | 0).toString(16).padStart(2, "0")}${(((c >> 5) & 63) * 255 / 63 | 0).toString(16).padStart(2, "0")}${((c & 31) * 255 / 31 | 0).toString(16).padStart(2, "0")}`;
-      blocks.push({ label, name, color: rgb, types: new Array(ntypes) });
+    const key = `openpocket-cat-${this.info.identity}-${this.info.version}`, partKey = `${key}-part`, nblk = this.info.nblk;
+    const whole = (c) => !!c && !c.part && Array.isArray(c.blocks) && c.blocks.length === nblk;
+    const begun = (c) => !!c && c.part === true && Array.isArray(c.blocks) && c.blocks.length <= nblk &&
+      c.blocks.every((x) => x && typeof x.label === "string" && Array.isArray(x.types));
+    const stored = (k) => { try { return JSON.parse(localStorage.getItem(k) || "null"); } catch (_) { return null; } };
+    let c = catMem.get(key);
+    if (!whole(c)) { const s = stored(key); if (whole(s)) c = s; }
+    if (whole(c)) {
+      catMem.set(key, c);
+      this.cat = c;
+      if (this.hasNam) await this.namTexts();
+      if (this.hasIr) await this.irTexts();
+      return c;
     }
-    const total = blocks.reduce((s, b) => s + b.types.length, 0);
-    let done = 0;
-    for (let b = 0; b < blocks.length; b++) {
-      for (let t = 0; t < blocks[b].types.length; t++) {
-        const r = new Reader(await this.request(C.CAT_TYPE, [b, t]));
-        r.b(); r.b();
-        const name = r.s(), np = r.b(), mask = r.b();
-        const params = [];
-        for (let k = 0; k < np; k++) params.push({ name: r.s(), texts: null });
-        for (let k = 0; k < np; k++) {
-          if (!(mask >> k & 1)) continue;
-          const q = new Reader(await this.request(C.TEXTS, [b, t, k]));
-          q.b(); q.b(); q.b();
-          const texts = []; for (let v = 0; v <= 100; v++) texts.push(q.s());
-          params[k].texts = texts;
-        }
-        blocks[b].types[t] = { name, params };
-        progress(++done / total);
+    let part = begun(c) ? c : stored(partKey);
+    if (!begun(part)) part = { part: true, blocks: [] };
+    catMem.set(key, part);
+    const blocks = part.blocks;
+    let kept = Date.now(), total = 0, done = 0, at = "";
+    const keep = (now) => {                            // (the part read so far, into the browser: every 2 s and when cut short)
+      if (!now && Date.now() - kept < 2000) return;
+      kept = Date.now();
+      try { localStorage.setItem(partKey, JSON.stringify(part)); } catch (_) { }
+    };
+    try {
+      for (let b = blocks.length; b < nblk; b++) {
+        at = `block ${b + 1}`;
+        const r = new Reader(await this.request(C.CAT_BLOCK, [b]));
+        r.b();
+        const label = r.s(), name = r.s(), ntypes = r.b();
+        const c = r.b() | r.b() << 7 | r.b() << 14;
+        const rgb = `#${(((c >> 11) & 31) * 255 / 31 | 0).toString(16).padStart(2, "0")}${(((c >> 5) & 63) * 255 / 63 | 0).toString(16).padStart(2, "0")}${((c & 31) * 255 / 31 | 0).toString(16).padStart(2, "0")}`;
+        blocks.push({ label, name, color: rgb, types: Array.from({ length: ntypes }, () => null) });
       }
+      total = blocks.reduce((s, x) => s + x.types.length, 0);
+      done = blocks.reduce((s, x) => s + x.types.filter(Boolean).length, 0);
+      if (done) progress(done / total);
+      for (let b = 0; b < blocks.length; b++) {
+        for (let t = 0; t < blocks[b].types.length; t++) {
+          if (blocks[b].types[t]) continue;
+          at = `${blocks[b].label} type ${t + 1}`;
+          const r = new Reader(await this.request(C.CAT_TYPE, [b, t]));
+          r.b(); r.b();
+          const name = r.s(), np = r.b(), mask = r.b();
+          const params = [];
+          for (let k = 0; k < np; k++) params.push({ name: r.s(), texts: null });
+          for (let k = 0; k < np; k++) {
+            if (!(mask >> k & 1)) continue;
+            const q = new Reader(await this.request(C.TEXTS, [b, t, k]));
+            q.b(); q.b(); q.b();
+            const texts = []; for (let v = 0; v <= 100; v++) texts.push(q.s());
+            params[k].texts = texts;
+          }
+          blocks[b].types[t] = { name, params };
+          progress(++done / total);
+          keep(false);
+        }
+      }
+    } catch (e) {
+      keep(true);
+      const sofar = total ? `${done} of ${total} types read and kept` : `${blocks.length} of ${nblk} blocks read and kept`;
+      throw fail(e.code || "error", `${e.message} at ${at}: ${sofar}, connect again to go on`);
     }
     this.cat = { blocks };
-    try { localStorage.setItem(key, JSON.stringify(this.cat)); } catch (_) { }
+    catMem.set(key, this.cat);
+    try { localStorage.setItem(key, JSON.stringify(this.cat)); localStorage.removeItem(partKey); } catch (_) { }
     if (this.hasNam) await this.namTexts();
     if (this.hasIr) await this.irTexts();
     return this.cat;
